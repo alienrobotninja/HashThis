@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-// We use the environment variable, but fall back to localhost for dev
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
 
 const client = axios.create({
@@ -11,25 +10,22 @@ const client = axios.create({
 });
 
 export const api = {
-  /**
-   * Anchors a hash to the CKB blockchain via the backend.
-   */
   submitHash: async (fileHash: string, timestamp: string) => {
     const response = await client.post('/hashes', { fileHash, timestamp });
     return response.data;
   },
 
-  /**
-   * Checks if a hash already exists on-chain.
-   */
   verifyHash: async (hash: string) => {
-    const response = await client.get(`/hashes/${hash}`);
-    return response.data;
+    try {
+      const response = await client.get(`/hashes/${hash}`);
+      return response.data;
+    } catch (err: any) {
+      // 404 means the hash simply isn't on chain yet — not a service failure
+      if (err.response?.status === 404) return null;
+      throw err;
+    }
   },
 
-  /**
-   * Backend health check to ensure we can connect.
-   */
   checkHealth: async () => {
     try {
       const response = await client.get('http://localhost:3001/health');

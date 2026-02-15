@@ -1,8 +1,11 @@
-import { RPC, Indexer, config, commons, Cell, HexString, Script, hd } from "@ckb-lumos/lumos";
+import { RPC, Indexer, config, commons, Cell, HexString, Script, hd, helpers } from "@ckb-lumos/lumos";
 import { TransactionSkeleton, TransactionSkeletonType, sealTransaction } from "@ckb-lumos/helpers";
 import { registry } from "../config/registry.js";
 import { logger } from "../utils/logger.js";
 import { HashPayload, SubmissionResult } from "../types/index.js";
+
+// 110 CKB in shannons — 101 CKB minimum (cell + data) plus headroom
+const ANCHOR_CAPACITY = BigInt("11000000000"); // 110 CKB — covers 101 CKB min cell + data
 
 export class CKBService {
   private rpc: RPC;
@@ -14,9 +17,6 @@ export class CKBService {
     this.indexer = new Indexer(registry.ckb.indexerUrl);
   }
 
-  /**
-   * Initializes the Lumos configuration for the Aggron4 Testnet.
-   */
   public async start() {
     if (this.isInitialized) return;
     try {
@@ -28,93 +28,128 @@ export class CKBService {
     }
   }
 
-  /**
-   * Anchors a file hash to the blockchain by creating a new cell.
-   */
   public async submitHash(payload: HashPayload): Promise<SubmissionResult> {
     if (!this.isInitialized) await this.start();
 
+    const testnetConfig = config.predefined.AGGRON4;
+    const scriptConfig = testnetConfig.SCRIPTS.SECP256K1_BLAKE160 ||
+                         testnetConfig.SCRIPTS.SECP256K1_BLAKE160_SIGHASH_ALL;
+
+    if (!scriptConfig) {
+      throw new Error("CKB Script configuration not found for Testnet.");
+    }
+
     const privKey = registry.ckb.signerPrivKey;
+    if (!privKey || privKey === '0x') {
+      throw new Error("Private key is missing. Check your .env file.");
+    }
+
     const pubKey = hd.key.privateToPublic(privKey);
     const args = hd.key.publicKeyToBlake160(pubKey);
-    
+
     const lockScript: Script = {
-      codeHash: config.predefined.AGGRON4.SCRIPTS.SECP256K1_BLAKE160.CODE_HASH,
-      hashType: config.predefined.AGGRON4.SCRIPTS.SECP256K1_BLAKE160.HASH_TYPE,
-      args: args
+      codeHash: scriptConfig.CODE_HASH,
+      hashType: scriptConfig.HASH_TYPE,
+      args,
     };
+
+    const fromAddress = helpers.encodeToAddress(lockScript, { config: testnetConfig });
+    logger.info(`Building transaction for address: ${fromAddress}`);
+
+    const encodedData = this.encodeHashData(payload.fileHash, payload.timestamp);
 
     let txSkeleton = TransactionSkeleton({ cellProvider: this.indexer });
 
-    const outputCell: Cell = {
+    // output cell with the hash data embedded
+    const anchorCell: Cell = {
       cellOutput: {
-        capacity: "0x174876e800", // 100 CKB
+        capacity: "0x28fa6ae00", // 110 CKB in shannons,
         lock: lockScript,
       },
-      data: this.encodeHashData(payload.fileHash, payload.timestamp),
+      data: encodedData,
     };
 
-    txSkeleton = txSkeleton.update("outputs", (outputs) => outputs.push(outputCell));
+    txSkeleton = txSkeleton.update("outputs", (outputs) => outputs.push(anchorCell));
 
-    // Inject Capacity (Inputs)
-    txSkeleton = await commons.common.setupInputCell(
-      txSkeleton,
-      lockScript as any, 
-      undefined,
-      { config: config.predefined.AGGRON4 }
+    // fix the output so lumos doesn't treat it as a free-to-adjust change cell
+    txSkeleton = txSkeleton.update("fixedEntries", (entries) =>
+      entries.push({ field: "outputs", index: 0 })
     );
 
-    // Pay Network Fees
+    txSkeleton = txSkeleton.update("cellDeps", (cellDeps) =>
+      cellDeps.push({
+        outPoint: {
+          txHash: scriptConfig.TX_HASH,
+          index: scriptConfig.INDEX,
+        },
+        depType: scriptConfig.DEP_TYPE,
+      })
+    );
+
+    // collect enough inputs to cover the anchor cell + fees, change goes back to sender
+    txSkeleton = await commons.common.injectCapacity(
+      txSkeleton,
+      [fromAddress],
+      ANCHOR_CAPACITY,
+      undefined,
+      { config: testnetConfig }
+    );
+
     txSkeleton = await commons.common.payFeeByFeeRate(
       txSkeleton,
-      [lockScript as any],
+      [fromAddress],
       1000,
       undefined,
-      { config: config.predefined.AGGRON4 }
+      { config: testnetConfig }
     );
 
-    const txHash = await this.signAndSend(txSkeleton);
+    txSkeleton = commons.common.prepareSigningEntries(txSkeleton, { config: testnetConfig });
+
+    const signingEntries = txSkeleton.get("signingEntries");
+    if (!signingEntries || signingEntries.size === 0) {
+      throw new Error("No signing entries — wallet may have insufficient balance or indexer is unreachable.");
+    }
+
+    const sig = hd.key.signRecoverable(signingEntries.get(0)!.message, privKey);
+    const tx = sealTransaction(txSkeleton, [sig]);
+    const txHash = await this.rpc.sendTransaction(tx, "passthrough");
+    logger.info(`Transaction Sent: ${txHash}`);
 
     return {
       txHash,
       blockNumber: "pending",
-      status: "committed"
+      status: "committed",
     };
   }
 
-  /**
-   * Scans the blockchain for a specific file hash.
-   * Returns the metadata if found, or null if it's a "fresh" hash.
-   */
   public async verifyHash(fileHash: string): Promise<{ timestamp: string; blockNumber: string } | null> {
     if (!this.isInitialized) await this.start();
+
+    const testnetConfig = config.predefined.AGGRON4;
+    const scriptConfig = testnetConfig.SCRIPTS.SECP256K1_BLAKE160 ||
+                         testnetConfig.SCRIPTS.SECP256K1_BLAKE160_SIGHASH_ALL;
 
     const privKey = registry.ckb.signerPrivKey;
     const pubKey = hd.key.privateToPublic(privKey);
     const args = hd.key.publicKeyToBlake160(pubKey);
-    
+
     const lockScript: Script = {
-      codeHash: config.predefined.AGGRON4.SCRIPTS.SECP256K1_BLAKE160.CODE_HASH,
-      hashType: config.predefined.AGGRON4.SCRIPTS.SECP256K1_BLAKE160.HASH_TYPE,
-      args: args
+      codeHash: scriptConfig!.CODE_HASH,
+      hashType: scriptConfig!.HASH_TYPE,
+      args,
     };
 
-    // Use CellCollector to find all cells associated with this lock script
     const collector = this.indexer.collector({ lock: lockScript });
     const cleanSearchHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
 
     logger.info(`Searching for hash: ${cleanSearchHash}`);
 
     for await (const cell of collector.collect()) {
-      const cellData = cell.data;
-      
-      // Data format: 0x + <32 bytes hash> + <8 bytes timestamp>
-      // We check if the hash part matches our search target
-      if (cellData.includes(cleanSearchHash)) {
-        const decoded = this.decodeHashData(cellData);
+      if (cell.data.includes(cleanSearchHash)) {
+        const decoded = this.decodeHashData(cell.data);
         return {
           timestamp: decoded.timestamp,
-          blockNumber: cell.blockNumber || 'unknown'
+          blockNumber: cell.blockNumber || 'unknown',
         };
       }
     }
@@ -122,9 +157,6 @@ export class CKBService {
     return null;
   }
 
-  /**
-   * Hex-encodes hash and timestamp for cell storage.
-   */
   public encodeHashData(fileHash: string, timestampISO: string): HexString {
     const cleanHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
     const timestamp = BigInt(new Date(timestampISO).getTime());
@@ -132,35 +164,16 @@ export class CKBService {
     return `0x${cleanHash}${timestampHex}`;
   }
 
-  /**
-   * Extracts data from hex-encoded cell data.
-   */
   private decodeHashData(hexData: string): { hash: string; timestamp: string } {
     const data = hexData.startsWith('0x') ? hexData.slice(2) : hexData;
-    
-    // First 64 hex chars = 32 bytes (The SHA-256 Hash)
     const hash = data.slice(0, 64);
-    
-    // Remaining 16 hex chars = 8 bytes (The Timestamp)
     const timestampHex = data.slice(64, 80);
     const timestampMs = BigInt(`0x${timestampHex}`);
-    
+
     return {
       hash: `0x${hash}`,
-      timestamp: new Date(Number(timestampMs)).toISOString()
+      timestamp: new Date(Number(timestampMs)).toISOString(),
     };
-  }
-
-  /**
-   * Signs and broadcasts the transaction.
-   */
-  private async signAndSend(txSkeleton: TransactionSkeletonType): Promise<string> {
-    const privKey = registry.ckb.signerPrivKey;
-    const txSkeletonWithWitness = commons.common.prepareSigningEntries(txSkeleton);
-    const tx = sealTransaction(txSkeletonWithWitness, [privKey]);
-    const txHash = await this.rpc.sendTransaction(tx, "passthrough");
-    logger.info(`Transaction Sent: ${txHash}`);
-    return txHash;
   }
 }
 
