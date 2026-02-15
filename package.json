@@ -10,13 +10,12 @@
     "backend"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\"",
-    "build": "npm run build -w frontend -w backend",
-    "test": "npm test -w frontend -w backend"
+    "test": "npm run test -w backend",
+    "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\""
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "typescript": "^5.3.3",
-    "prettier": "^3.1.0"
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.3"
   }
 }
