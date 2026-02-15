@@ -14,6 +14,9 @@ export class CKBService {
     this.indexer = new Indexer(registry.ckb.indexerUrl);
   }
 
+  /**
+   * Initializes the Lumos configuration for the Aggron4 Testnet.
+   */
   public async start() {
     if (this.isInitialized) return;
     try {
@@ -25,12 +28,13 @@ export class CKBService {
     }
   }
 
+  /**
+   * Anchors a file hash to the blockchain by creating a new cell.
+   */
   public async submitHash(payload: HashPayload): Promise<SubmissionResult> {
     if (!this.isInitialized) await this.start();
 
     const privKey = registry.ckb.signerPrivKey;
-    
-    // Fix: Using the correct function name 'privateToPublic' as per your library version
     const pubKey = hd.key.privateToPublic(privKey);
     const args = hd.key.publicKeyToBlake160(pubKey);
     
@@ -78,6 +82,49 @@ export class CKBService {
     };
   }
 
+  /**
+   * Scans the blockchain for a specific file hash.
+   * Returns the metadata if found, or null if it's a "fresh" hash.
+   */
+  public async verifyHash(fileHash: string): Promise<{ timestamp: string; blockNumber: string } | null> {
+    if (!this.isInitialized) await this.start();
+
+    const privKey = registry.ckb.signerPrivKey;
+    const pubKey = hd.key.privateToPublic(privKey);
+    const args = hd.key.publicKeyToBlake160(pubKey);
+    
+    const lockScript: Script = {
+      codeHash: config.predefined.AGGRON4.SCRIPTS.SECP256K1_BLAKE160.CODE_HASH,
+      hashType: config.predefined.AGGRON4.SCRIPTS.SECP256K1_BLAKE160.HASH_TYPE,
+      args: args
+    };
+
+    // Use CellCollector to find all cells associated with this lock script
+    const collector = this.indexer.collector({ lock: lockScript });
+    const cleanSearchHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
+
+    logger.info(`Searching for hash: ${cleanSearchHash}`);
+
+    for await (const cell of collector.collect()) {
+      const cellData = cell.data;
+      
+      // Data format: 0x + <32 bytes hash> + <8 bytes timestamp>
+      // We check if the hash part matches our search target
+      if (cellData.includes(cleanSearchHash)) {
+        const decoded = this.decodeHashData(cellData);
+        return {
+          timestamp: decoded.timestamp,
+          blockNumber: cell.blockNumber || 'unknown'
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Hex-encodes hash and timestamp for cell storage.
+   */
   public encodeHashData(fileHash: string, timestampISO: string): HexString {
     const cleanHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
     const timestamp = BigInt(new Date(timestampISO).getTime());
@@ -85,6 +132,28 @@ export class CKBService {
     return `0x${cleanHash}${timestampHex}`;
   }
 
+  /**
+   * Extracts data from hex-encoded cell data.
+   */
+  private decodeHashData(hexData: string): { hash: string; timestamp: string } {
+    const data = hexData.startsWith('0x') ? hexData.slice(2) : hexData;
+    
+    // First 64 hex chars = 32 bytes (The SHA-256 Hash)
+    const hash = data.slice(0, 64);
+    
+    // Remaining 16 hex chars = 8 bytes (The Timestamp)
+    const timestampHex = data.slice(64, 80);
+    const timestampMs = BigInt(`0x${timestampHex}`);
+    
+    return {
+      hash: `0x${hash}`,
+      timestamp: new Date(Number(timestampMs)).toISOString()
+    };
+  }
+
+  /**
+   * Signs and broadcasts the transaction.
+   */
   private async signAndSend(txSkeleton: TransactionSkeletonType): Promise<string> {
     const privKey = registry.ckb.signerPrivKey;
     const txSkeletonWithWitness = commons.common.prepareSigningEntries(txSkeleton);
