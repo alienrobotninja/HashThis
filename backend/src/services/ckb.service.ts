@@ -97,7 +97,7 @@ export class CKBService {
       txSkeleton,
       [fromAddress],
       ANCHOR_CAPACITY,
-      { config: testnetConfig }
+      testnetConfig
     );
 
     // Pay network fees
