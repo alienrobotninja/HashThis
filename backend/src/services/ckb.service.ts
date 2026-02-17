@@ -96,8 +96,7 @@ export class CKBService {
     txSkeleton = await commons.common.injectCapacity(
       txSkeleton,
       [fromAddress],
-      ANCHOR_CAPACITY,
-      testnetConfig
+      ANCHOR_CAPACITY
     );
 
     // Pay network fees
