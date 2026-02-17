@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -11,16 +11,15 @@ const client = axios.create({
 
 export const api = {
   submitHash: async (fileHash: string, timestamp: string) => {
-    const response = await client.post('/hashes', { fileHash, timestamp });
+    const response = await client.post('/api/v1/hashes', { fileHash, timestamp });
     return response.data;
   },
 
   verifyHash: async (hash: string) => {
     try {
-      const response = await client.get(`/hashes/${hash}`);
+      const response = await client.get(`/api/v1/hashes/${hash}`);
       return response.data;
     } catch (err: any) {
-      // 404 means the hash simply isn't on chain yet — not a service failure
       if (err.response?.status === 404) return null;
       throw err;
     }
@@ -28,7 +27,7 @@ export const api = {
 
   checkHealth: async () => {
     try {
-      const response = await client.get('http://localhost:3001/health');
+      const response = await client.get('/health');
       return response.data;
     } catch (error) {
       console.error("API Health Check Failed", error);
