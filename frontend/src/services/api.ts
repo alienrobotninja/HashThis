@@ -11,13 +11,13 @@ const client = axios.create({
 
 export const api = {
   submitHash: async (fileHash: string, timestamp: string) => {
-    const response = await client.post('/api/v1/hashes', { fileHash, timestamp });
+    const response = await client.post('/hashes/index', { fileHash, timestamp });
     return response.data;
   },
 
   verifyHash: async (hash: string) => {
     try {
-      const response = await client.get(`/api/v1/hashes/${hash}`);
+      const response = await client.get(`/hashes/${hash}`);
       return response.data;
     } catch (err: any) {
       if (err.response?.status === 404) return null;
