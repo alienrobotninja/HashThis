@@ -1,13 +1,12 @@
 {
-  "version": 2,
   "functions": {
-    "api/**/*.ts": {
+    "api/hashes/index.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    },
+    "api/hashes/[hash].ts": {
       "memory": 1024,
       "maxDuration": 30
     }
-  },
-  "rewrites": [
-    { "source": "/api/hashes", "destination": "/api/hashes/index.ts" },
-    { "source": "/api/hashes/:hash", "destination": "/api/hashes/[hash].ts" }
-  ]
+  }
 }
