@@ -40,14 +40,14 @@ class CKBService {
       const signer = this.getSigner();
       const addressObj = await signer.getRecommendedAddressObj();
       
-      console.log(`[CKB] Building transaction for ${addressObj.address}`);
+      console.log(`[CKB] Building transaction`);
 
       const encodedData = this.encodeHashData(payload.fileHash, payload.timestamp);
 
       const tx = ccc.Transaction.from({
         outputs: [{
           lock: addressObj.script,
-          capacity: ccc.numLeToHex(ANCHOR_CAPACITY),
+          capacity: ccc.numToHex(ANCHOR_CAPACITY),
         }],
         outputsData: [encodedData],
       });
@@ -77,9 +77,8 @@ class CKBService {
       const cleanSearchHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
       console.log(`[CKB] Searching for hash: ${cleanSearchHash}`);
 
-      const collector = this.client.findCellsByLock(addressObj.script, "asc");
-
-      for await (const cell of collector.collect()) {
+      // CCC returns AsyncGenerator, iterate directly without .collect()
+      for await (const cell of this.client.findCellsByLock(addressObj.script, "asc")) {
         const cellData = cell.outputData || '';
         if (cellData.includes(cleanSearchHash)) {
           const decoded = this.decodeHashData(cellData);
