@@ -77,8 +77,10 @@ class CKBService {
       const cleanSearchHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
       console.log(`[CKB] Searching for hash: ${cleanSearchHash}`);
 
-      // Pass script directly without conversion - TypeScript should accept it as ScriptLike
-      for await (const cell of this.client.findCellsByLock(addressObj.script as any, "asc")) {
+      // Use type assertion on the method call itself
+      const cellIterator = (this.client.findCellsByLock as any)(addressObj.script, "asc");
+      
+      for await (const cell of cellIterator) {
         const cellData = cell.outputData || '';
         if (cellData.includes(cleanSearchHash)) {
           const decoded = this.decodeHashData(cellData);
