@@ -72,23 +72,26 @@ class CKBService {
   public async verifyHash(fileHash: string): Promise<{ timestamp: string; blockNumber: string } | null> {
     try {
       const signer = this.getSigner();
-      const lock = await signer.getRecommendedAddress();
+      const addressObj = await signer.getRecommendedAddressObj();
+      const lockScript = addressObj.script;
 
       const cleanSearchHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
       console.log(`[CKB] Searching for hash: ${cleanSearchHash}`);
 
-      // findCellsByLock takes address string, not script
-      for await (const cell of this.client.findCellsByLock(lock, "asc")) {
+      // Pass the script object directly
+      for await (const cell of this.client.findCellsByLock(lockScript, "asc")) {
         const cellData = cell.outputData || '';
         if (cellData.includes(cleanSearchHash)) {
           const decoded = this.decodeHashData(cellData);
           
-          // Get block number from cell's outPoint if available
+          // Get block number from transaction if available
           let blockNum = 'unknown';
           try {
             if (cell.outPoint?.txHash) {
               const txWithStatus = await this.client.getTransaction(cell.outPoint.txHash);
-              blockNum = txWithStatus?.blockNumber?.toString() || 'unknown';
+              if (txWithStatus?.blockNumber) {
+                blockNum = txWithStatus.blockNumber.toString();
+              }
             }
           } catch (e) {
             console.log('[CKB] Could not fetch block number');
