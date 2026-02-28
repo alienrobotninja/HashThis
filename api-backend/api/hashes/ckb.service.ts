@@ -72,45 +72,47 @@ class CKBService {
   public async verifyHash(fileHash: string): Promise<{ timestamp: string; blockNumber: string } | null> {
     try {
       const signer = this.getSigner();
-      const addressObj = await signer.getRecommendedAddressObj();
-
+      
       const cleanSearchHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
       console.log(`[CKB] Searching for hash: ${cleanSearchHash}`);
 
-      const cellIterator = (this.client.findCellsByLock as any)(addressObj.script, "asc");
+      // Get all transactions sent by this signer
+      const addressObj = await signer.getRecommendedAddressObj();
+      const address = addressObj.address;
       
-      for await (const cell of cellIterator) {
-        console.log('[CKB] Found cell, checking data...');
-        
-        const cellData = cell.outputData;
-        
-        if (!cellData) {
-          console.log('[CKB] Cell has no outputData, skipping');
-          continue;
-        }
-        
-        console.log('[CKB] Cell data:', cellData);
-        
-        if (cellData.includes(cleanSearchHash)) {
-          console.log('[CKB] Match found!');
-          const decoded = this.decodeHashData(cellData);
-          
-          let blockNum = 'unknown';
-          try {
-            if (cell.outPoint?.txHash) {
-              const txWithStatus = await this.client.getTransaction(cell.outPoint.txHash);
-              if (txWithStatus?.blockNumber) {
-                blockNum = txWithStatus.blockNumber.toString();
-              }
-            }
-          } catch (e) {
-            console.log('[CKB] Could not fetch block number');
-          }
+      console.log(`[CKB] Searching transactions for address: ${address}`);
 
-          return {
-            timestamp: decoded.timestamp,
-            blockNumber: blockNum,
-          };
+      // Use findTransactions instead of findCellsByLock
+      let found = false;
+      for await (const tx of this.client.findTransactions(address, "asc", "lock")) {
+        console.log('[CKB] Checking transaction:', tx.txHash);
+        
+        // Get full transaction details
+        try {
+          const txWithStatus = await this.client.getTransaction(tx.txHash);
+          if (!txWithStatus?.transaction) continue;
+          
+          // Check outputs data
+          const outputs = txWithStatus.transaction.outputsData || [];
+          for (const outputData of outputs) {
+            if (!outputData) continue;
+            
+            console.log('[CKB] Checking output data:', outputData);
+            
+            if (outputData.includes(cleanSearchHash)) {
+              console.log('[CKB] Match found!');
+              const decoded = this.decodeHashData(outputData);
+              
+              const blockNum = txWithStatus.blockNumber?.toString() || 'unknown';
+              
+              return {
+                timestamp: decoded.timestamp,
+                blockNumber: blockNum,
+              };
+            }
+          }
+        } catch (e: any) {
+          console.log('[CKB] Error checking tx:', e.message);
         }
       }
 
