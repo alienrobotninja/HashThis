@@ -72,45 +72,48 @@ class CKBService {
   public async verifyHash(fileHash: string): Promise<{ timestamp: string; blockNumber: string } | null> {
     try {
       const signer = this.getSigner();
+      const addressObj = await signer.getRecommendedAddressObj();
       
       const cleanSearchHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
       console.log(`[CKB] Searching for hash: ${cleanSearchHash}`);
 
-      // Get address as string
-      const address = await signer.getRecommendedAddress();
-      
-      console.log(`[CKB] Searching transactions for address: ${address}`);
-
-      // Use findTransactions with address string
-      for await (const tx of this.client.findTransactions(address)) {
-        console.log('[CKB] Checking transaction:', tx.txHash);
+      // Get all cells for this lock script using any type assertion to bypass type issues
+      const cells: any[] = [];
+      try {
+        const iterator: any = this.client.findCells({
+          script: addressObj.script,
+          scriptType: "lock",
+          scriptSearchMode: "exact"
+        }, "asc");
         
-        // Get full transaction details
-        try {
-          const txWithStatus = await this.client.getTransaction(tx.txHash);
-          if (!txWithStatus?.transaction) continue;
+        for await (const cell of iterator) {
+          cells.push(cell);
+        }
+      } catch (e: any) {
+        console.log('[CKB] findCells error:', e.message);
+      }
+      
+      console.log(`[CKB] Found ${cells.length} cells to check`);
+
+      // Check each cell's output data
+      for (const cell of cells) {
+        if (!cell || !cell.outputData) continue;
+        
+        console.log('[CKB] Checking cell data:', cell.outputData);
+        
+        if (cell.outputData.includes(cleanSearchHash)) {
+          console.log('[CKB] Match found!');
+          const decoded = this.decodeHashData(cell.outputData);
           
-          // Check outputs data
-          const outputs = txWithStatus.transaction.outputsData || [];
-          for (const outputData of outputs) {
-            if (!outputData) continue;
-            
-            console.log('[CKB] Checking output data:', outputData);
-            
-            if (outputData.includes(cleanSearchHash)) {
-              console.log('[CKB] Match found!');
-              const decoded = this.decodeHashData(outputData);
-              
-              const blockNum = txWithStatus.blockNumber?.toString() || 'unknown';
-              
-              return {
-                timestamp: decoded.timestamp,
-                blockNumber: blockNum,
-              };
-            }
+          let blockNum = 'unknown';
+          if (cell.blockNumber) {
+            blockNum = cell.blockNumber.toString();
           }
-        } catch (e: any) {
-          console.log('[CKB] Error checking tx:', e.message);
+          
+          return {
+            timestamp: decoded.timestamp,
+            blockNumber: blockNum,
+          };
         }
       }
 
