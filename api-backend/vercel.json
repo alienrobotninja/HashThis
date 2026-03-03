@@ -1,12 +1,7 @@
 {
-  "functions": {
-    "api/hashes/index.ts": {
-      "memory": 1024,
-      "maxDuration": 30
-    },
-    "api/hashes/[hash].ts": {
-      "memory": 1024,
-      "maxDuration": 30
-    }
-  }
+  "routes": [
+    { "src": "/api/hashes/build", "dest": "/api/hashes/build.ts" },
+    { "src": "/api/hashes/([^/]+)", "dest": "/api/hashes/[hash].ts" },
+    { "src": "/api/hashes", "dest": "/api/hashes/index.ts" }
+  ]
 }
