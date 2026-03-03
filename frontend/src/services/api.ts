@@ -1,17 +1,20 @@
-import axios from 'axios';
+import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 const client = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { "Content-Type": "application/json" },
 });
 
 export const api = {
-  submitHash: async (fileHash: string, timestamp: string) => {
-    const response = await client.post('/hashes/index', { fileHash, timestamp });
+  /**
+   * Asks the backend to build an unsigned tx shell for the given hash.
+   * Server encodes hash + server-generated timestamp into outputs.
+   * User's wallet completes inputs, pays fees, signs, and broadcasts.
+   */
+  buildUnsignedTx: async (fileHash: string, userAddress: string) => {
+    const response = await client.post("/hashes/build", { fileHash, userAddress });
     return response.data;
   },
 
@@ -27,11 +30,10 @@ export const api = {
 
   checkHealth: async () => {
     try {
-      const response = await client.get('/health');
+      const response = await client.get("/health");
       return response.data;
-    } catch (error) {
-      console.error("API Health Check Failed", error);
-      return { status: 'offline' };
+    } catch {
+      return { status: "offline" };
     }
-  }
+  },
 };
