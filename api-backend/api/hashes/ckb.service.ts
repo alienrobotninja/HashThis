@@ -1,10 +1,19 @@
 import { ccc } from "@ckb-ccc/core";
 
-const ANCHOR_CAPACITY = BigInt("11000000000"); // 110 CKB
+const ANCHOR_CAPACITY = BigInt("11000000000"); // 110 CKB in shannons
 
 interface HashPayload {
   fileHash: string;
-  timestamp: string;
+}
+
+interface UnsignedTxPayload {
+  fileHash: string;
+  userAddress: string;
+}
+
+interface UnsignedTxResult {
+  outputs: { lock: object; capacity: string }[];
+  outputsData: string[];
 }
 
 interface SubmissionResult {
@@ -18,37 +27,51 @@ class CKBService {
   private signer: ccc.SignerCkbPrivateKey | null = null;
 
   constructor() {
-    const network = process.env.CKB_NETWORK || 'testnet';
-    this.client = network === 'mainnet'
-      ? new ccc.ClientPublicMainnet()
-      : new ccc.ClientPublicTestnet();
+    const network = process.env.CKB_NETWORK || "testnet";
+    this.client =
+      network === "mainnet"
+        ? new ccc.ClientPublicMainnet()
+        : new ccc.ClientPublicTestnet();
   }
 
   private getSigner(): ccc.SignerCkbPrivateKey {
     if (!this.signer) {
       const privKey = process.env.PRIVATE_KEY;
-      if (!privKey || privKey === '0x') {
-        throw new Error("Private key is missing in environment variables");
+      if (!privKey || privKey === "0x") {
+        throw new Error("PRIVATE_KEY is missing from environment variables");
       }
       this.signer = new ccc.SignerCkbPrivateKey(this.client, privKey);
     }
     return this.signer;
   }
 
+  public async buildUnsignedTx(payload: UnsignedTxPayload): Promise<UnsignedTxResult> {
+    const { fileHash, userAddress } = payload;
+    const userScript = (await ccc.Address.fromString(userAddress, this.client)).script;
+
+    // Server owns the timestamp — not the caller
+    const serverTimestamp = new Date().toISOString();
+    const encodedData = this.encodeHashData(fileHash, serverTimestamp);
+
+    console.log(`[CKB] Built unsigned tx for ${userAddress} — hash: ${fileHash}`);
+
+    return {
+      outputs: [{ lock: userScript, capacity: ccc.numToHex(ANCHOR_CAPACITY) }],
+      outputsData: [encodedData],
+    };
+  }
+
   public async submitHash(payload: HashPayload): Promise<SubmissionResult> {
     try {
       const signer = this.getSigner();
       const addressObj = await signer.getRecommendedAddressObj();
-      
-      console.log(`[CKB] Building transaction`);
 
-      const encodedData = this.encodeHashData(payload.fileHash, payload.timestamp);
+      // Server owns the timestamp — not the caller
+      const serverTimestamp = new Date().toISOString();
+      const encodedData = this.encodeHashData(payload.fileHash, serverTimestamp);
 
       const tx = ccc.Transaction.from({
-        outputs: [{
-          lock: addressObj.script,
-          capacity: ccc.numToHex(ANCHOR_CAPACITY),
-        }],
+        outputs: [{ lock: addressObj.script, capacity: ccc.numToHex(ANCHOR_CAPACITY) }],
         outputsData: [encodedData],
       });
 
@@ -58,87 +81,64 @@ class CKBService {
       const txHash = await signer.sendTransaction(tx);
       console.log(`[CKB] Transaction sent: ${txHash}`);
 
-      return {
-        txHash,
-        blockNumber: "pending",
-        status: "committed",
-      };
+      return { txHash, blockNumber: "pending", status: "committed" };
     } catch (error: any) {
       console.error("[CKB] Submit failed:", error.message);
       throw new Error(`Failed to anchor hash: ${error.message}`);
     }
   }
 
-  public async verifyHash(fileHash: string): Promise<{ timestamp: string; blockNumber: string } | null> {
+  public async verifyHash(
+    fileHash: string
+  ): Promise<{ timestamp: string; blockNumber: string } | null> {
     try {
       const signer = this.getSigner();
       const addressObj = await signer.getRecommendedAddressObj();
-      
-      const cleanSearchHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
+      const cleanSearchHash = fileHash.startsWith("0x") ? fileHash.slice(2) : fileHash;
+
       console.log(`[CKB] Searching for hash: ${cleanSearchHash}`);
 
-      // Get all cells for this lock script using any type assertion to bypass type issues
       const cells: any[] = [];
       try {
-        const iterator: any = this.client.findCells({
-          script: addressObj.script,
-          scriptType: "lock",
-          scriptSearchMode: "exact"
-        }, "asc");
-        
-        for await (const cell of iterator) {
-          cells.push(cell);
-        }
+        const iterator: any = this.client.findCells(
+          { script: addressObj.script, scriptType: "lock", scriptSearchMode: "exact" },
+          "asc"
+        );
+        for await (const cell of iterator) cells.push(cell);
       } catch (e: any) {
-        console.log('[CKB] findCells error:', e.message);
+        console.log("[CKB] findCells error:", e.message);
       }
-      
-      console.log(`[CKB] Found ${cells.length} cells to check`);
 
-      // Check each cell's output data
       for (const cell of cells) {
-        if (!cell || !cell.outputData) continue;
-        
-        console.log('[CKB] Checking cell data:', cell.outputData);
-        
-        if (cell.outputData.includes(cleanSearchHash)) {
-          console.log('[CKB] Match found!');
-          const decoded = this.decodeHashData(cell.outputData);
-          
-          let blockNum = 'unknown';
-          if (cell.blockNumber) {
-            blockNum = cell.blockNumber.toString();
-          }
-          
-          return {
-            timestamp: decoded.timestamp,
-            blockNumber: blockNum,
-          };
-        }
+        if (!cell?.outputData) continue;
+        if (!cell.outputData.includes(cleanSearchHash)) continue;
+
+        const decoded = this.decodeHashData(cell.outputData);
+        return {
+          timestamp: decoded.timestamp,
+          blockNumber: cell.blockNumber?.toString() || "unknown",
+        };
       }
 
-      console.log('[CKB] No matching hash found');
       return null;
     } catch (error: any) {
       console.error("[CKB] Verify failed:", error.message);
-      console.error("[CKB] Full error:", error);
       throw new Error(`Failed to verify hash: ${error.message}`);
     }
   }
 
   private encodeHashData(fileHash: string, timestampISO: string): string {
-    const cleanHash = fileHash.startsWith('0x') ? fileHash.slice(2) : fileHash;
-    const timestamp = BigInt(new Date(timestampISO).getTime());
-    const timestampHex = timestamp.toString(16).padStart(16, '0');
+    const cleanHash = fileHash.startsWith("0x") ? fileHash.slice(2) : fileHash;
+    const timestampMs = BigInt(new Date(timestampISO).getTime());
+    const timestampHex = timestampMs.toString(16).padStart(16, "0");
     return `0x${cleanHash}${timestampHex}`;
   }
 
   private decodeHashData(hexData: string): { hash: string; timestamp: string } {
-    const data = hexData.startsWith('0x') ? hexData.slice(2) : hexData;
+    const data = hexData.startsWith("0x") ? hexData.slice(2) : hexData;
     const hash = data.slice(0, 64);
     const timestampHex = data.slice(64, 80);
     const timestampMs = BigInt(`0x${timestampHex}`);
-
     return {
       hash: `0x${hash}`,
       timestamp: new Date(Number(timestampMs)).toISOString(),
