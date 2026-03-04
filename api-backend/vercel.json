@@ -1,7 +1,7 @@
 {
   "routes": [
     { "src": "/api/hashes/build", "dest": "/api/hashes/build.ts" },
-    { "src": "/api/hashes/([^/]+)", "dest": "/api/hashes/[hash].ts" },
+    { "src": "/api/hashes/([^/]+)", "dest": "/api/hashes/[hash].ts?hash=$1" },
     { "src": "/api/hashes", "dest": "/api/hashes/index.ts" }
   ]
 }
