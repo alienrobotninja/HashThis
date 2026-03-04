@@ -9,18 +9,21 @@ const client = axios.create({
 
 export const api = {
   /**
-   * Asks the backend to build an unsigned tx shell for the given hash.
-   * Server encodes hash + server-generated timestamp into outputs.
-   * User's wallet completes inputs, pays fees, signs, and broadcasts.
+   * Asks the backend to build an unsigned transaction shell for the given hash.
+   * The server encodes the file hash + a server-generated timestamp into the
+   * cell outputs, then returns the raw tx object for the user's wallet to
+   * complete (inputs, fees) and sign. Nothing is broadcast here.
    */
   buildUnsignedTx: async (fileHash: string, userAddress: string) => {
     const response = await client.post("/hashes/build", { fileHash, userAddress });
-    return response.data;
+    return response.data; // Partial tx: { outputs, outputsData }
   },
 
-  verifyHash: async (hash: string) => {
+  verifyHash: async (hash: string, userAddress: string) => {
     try {
-      const response = await client.get(`/hashes/${hash}`);
+      const response = await client.get(`/hashes/${hash}`, {
+        params: { userAddress },
+      });
       return response.data;
     } catch (err: any) {
       if (err.response?.status === 404) return null;

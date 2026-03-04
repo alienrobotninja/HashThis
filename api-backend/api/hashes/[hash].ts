@@ -1,42 +1,37 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { ckbService } from './ckb.service.js';
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { ckbService } from "./ckb.service.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Handle CORS preflight
-  res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader("Access-Control-Allow-Origin", process.env.CORS_ORIGIN || "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    // Vercel extracts path parameter from URL
     const hash = req.query.hash as string;
-
-    console.log('[API] Query params:', req.query);
-    console.log('[API] Hash value:', hash);
+    const userAddress = req.query.userAddress as string;
 
     if (!hash) {
-      return res.status(400).json({ error: 'Hash parameter is required' });
+      return res.status(400).json({ error: "Hash parameter is required" });
+    }
+    if (!userAddress) {
+      return res.status(400).json({ error: "userAddress query parameter is required" });
     }
 
-    console.log(`[API] Verify Hash ${hash}`);
-    const result = await ckbService.verifyHash(hash);
+    console.log(`[API] Verify hash: ${hash} for address: ${userAddress}`);
+    const result = await ckbService.verifyHash(hash, userAddress);
 
     if (!result) {
-      return res.status(404).json({ message: 'Hash not found on chain' });
+      return res.status(404).json({ message: "Hash not found on chain" });
     }
 
     return res.status(200).json(result);
   } catch (error: any) {
-    console.error('[API] Verify Error:', error.message);
-    console.error('[API] Full error:', error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    console.error("[API] Verify error:", error.message);
+    return res.status(500).json({ error: error.message || "Internal Server Error" });
   }
 }
