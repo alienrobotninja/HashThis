@@ -7,8 +7,9 @@ import { api } from "../services/api";
 type SubmitStatus = "idle" | "hashing" | "signing" | "broadcasting" | "success" | "error";
 
 export const SubmitPage = () => {
-  const { signer, open } = useCcc();
-  console.log("signer:", signer);
+  const { signerInfo, open } = useCcc();
+  const signer = signerInfo?.signer ?? null;
+
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [walletAddress, setWalletAddress] = useState("");
   const [txHash, setTxHash] = useState("");
