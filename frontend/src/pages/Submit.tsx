@@ -6,6 +6,10 @@ import { api } from "../services/api";
 
 type SubmitStatus = "idle" | "hashing" | "signing" | "broadcasting" | "success" | "error";
 
+// Fee rate in shannons per 1000 weight units.
+// At 1500, a ~374-weight tx pays 561 shannons — above the 504 minimum.
+const FEE_RATE = 1500;
+
 export const SubmitPage = () => {
   const { signerInfo, open } = useCcc();
   const signer = signerInfo?.signer ?? null;
@@ -45,7 +49,7 @@ export const SubmitPage = () => {
       // Step 4: user wallet fills inputs, pays fees, signs
       setStatus("signing");
       await tx.completeInputsByCapacity(signer);
-      await tx.completeFeeBy(signer, 1000);
+      await tx.completeFeeBy(signer, FEE_RATE);
       const signedTx = await signer.signTransaction(tx);
 
       // Step 5: broadcast — server wallet not involved
