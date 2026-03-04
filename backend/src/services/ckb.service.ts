@@ -72,7 +72,7 @@ export class CKBService {
       });
 
       await tx.completeInputsByCapacity(this.signer);
-      await tx.completeFeeBy(this.signer, 1000);
+      await tx.completeFeeBy(this.signer, 2000);
 
       const txHash = await this.signer.sendTransaction(tx);
       logger.info(`Transaction sent: ${txHash}`);
