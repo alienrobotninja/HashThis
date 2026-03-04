@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@ckb-ccc/connector-react": "^1.0.34",
+    "@ckb-ccc/core": "^1.12.5",
     "axios": "^1.13.5",
     "lucide-react": "^0.294.0",
     "react": "^18.2.0",
