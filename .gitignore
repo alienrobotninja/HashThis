@@ -5,6 +5,7 @@ backend/.env
 backend/node_modules/
 frontend/node_modules/
 .npm/ 
+test/
 
 # Blockchain/Keys
 wallet/
