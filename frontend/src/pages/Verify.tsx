@@ -3,7 +3,7 @@ import { useCcc } from "@ckb-ccc/connector-react";
 import { hashFile } from "../utils/hash";
 import { api } from "../services/api";
 
-type VerifyStatus = "idle" | "hashing" | "checking" | "found" | "not_found" | "error";
+type VerifyStatus = "idle" | "hashing" | "checking" | "fetching_time" | "found" | "not_found" | "error";
 
 export const VerifyPage = () => {
   const { signerInfo, open } = useCcc();
@@ -12,10 +12,12 @@ export const VerifyPage = () => {
   const [status, setStatus] = useState<VerifyStatus>("idle");
   const [walletAddress, setWalletAddress] = useState("");
   const [result, setResult] = useState<any>(null);
+  const [blockTimestamp, setBlockTimestamp] = useState("");
+  const [blockNumber, setBlockNumber] = useState("");
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isBusy = status === "hashing" || status === "checking";
+  const isBusy = status === "hashing" || status === "checking" || status === "fetching_time";
 
   // Resolve connected wallet address
   useEffect(() => {
@@ -30,6 +32,8 @@ export const VerifyPage = () => {
     setStatus("hashing");
     setError("");
     setResult(null);
+    setBlockTimestamp("");
+    setBlockNumber("");
 
     try {
       // Hash the file locally
@@ -43,6 +47,18 @@ export const VerifyPage = () => {
 
       if (data) {
         setResult(data);
+        
+        // If we have a txHash, fetch the block timestamp
+        if (data.txHash) {
+          setStatus("fetching_time");
+          const blockInfo = await api.getBlockTime(data.txHash);
+          setBlockTimestamp(blockInfo.timestamp);
+          setBlockNumber(blockInfo.blockNumber);
+        } else {
+          // Fallback: use blockNumber from cell if no txHash
+          setBlockNumber(data.blockNumber || "unknown");
+        }
+        
         setStatus("found");
       } else {
         setStatus("not_found");
@@ -97,12 +113,32 @@ export const VerifyPage = () => {
 
       {status === "hashing" && <div className="mt-4 text-center text-blue-600 animate-pulse font-medium">Hashing file…</div>}
       {status === "checking" && <div className="mt-4 text-center text-indigo-600 animate-pulse font-medium">Searching CKB…</div>}
+      {status === "fetching_time" && <div className="mt-4 text-center text-indigo-600 animate-pulse font-medium">Fetching block timestamp…</div>}
 
       {status === "found" && result && (
-        <div className="mt-6 p-4 bg-blue-50 text-blue-900 rounded-md border border-blue-200">
-          <p className="font-bold mb-1">✅ Record Verified</p>
-          <p className="text-sm font-medium">Anchored: {new Date(result.timestamp).toLocaleString()}</p>
-          <p className="text-xs text-blue-700 mt-1 font-mono">Block: {result.blockNumber}</p>
+        <div className="mt-6 p-5 bg-blue-50 text-blue-900 rounded-lg border border-blue-200">
+          <p className="font-bold text-lg mb-3">✅ Proof Verified</p>
+          
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between items-start">
+              <span className="text-gray-600">Anchored at:</span>
+              <span className="font-semibold font-mono text-right">
+                {blockTimestamp ? new Date(blockTimestamp).toLocaleString() : "—"}
+              </span>
+            </div>
+            
+            <div className="flex justify-between items-start">
+              <span className="text-gray-600">Block:</span>
+              <span className="font-semibold font-mono">#{blockNumber || result.blockNumber || "—"}</span>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-blue-200">
+            <p className="text-xs text-gray-600">
+              ✓ File fingerprint matches on-chain record.
+              This timestamp is cryptographically proven by the blockchain.
+            </p>
+          </div>
         </div>
       )}
 
