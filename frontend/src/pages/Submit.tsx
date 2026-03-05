@@ -4,7 +4,7 @@ import { useCcc } from "@ckb-ccc/connector-react";
 import { hashFile } from "../utils/hash";
 import { api } from "../services/api";
 
-type SubmitStatus = "idle" | "hashing" | "signing" | "broadcasting" | "success" | "error";
+type SubmitStatus = "idle" | "hashing" | "signing" | "broadcasting" | "confirming" | "success" | "error";
 
 // Fee rate in shannons per 1000 weight units.
 // At 1500, a ~374-weight tx pays 561 shannons — above the 504 minimum.
@@ -17,10 +17,12 @@ export const SubmitPage = () => {
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [walletAddress, setWalletAddress] = useState("");
   const [txHash, setTxHash] = useState("");
+  const [blockTimestamp, setBlockTimestamp] = useState("");
+  const [blockNumber, setBlockNumber] = useState("");
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isBusy = status === "hashing" || status === "signing" || status === "broadcasting";
+  const isBusy = status === "hashing" || status === "signing" || status === "broadcasting" || status === "confirming";
 
   useEffect(() => {
     if (!signer) { setWalletAddress(""); return; }
@@ -33,6 +35,8 @@ export const SubmitPage = () => {
 
     setError("");
     setTxHash("");
+    setBlockTimestamp("");
+    setBlockNumber("");
 
     try {
       // Step 1: hash the file locally — file contents never leave the device
@@ -42,7 +46,7 @@ export const SubmitPage = () => {
       // Step 2: resolve user address so backend locks the cell to them
       const userAddress = await signer.getRecommendedAddress();
 
-      // Step 3: backend builds unsigned tx with server-generated timestamp
+      // Step 3: backend builds unsigned tx (no timestamp in cell data)
       const partialTx = await api.buildUnsignedTx(fileHash, userAddress);
       const tx = ccc.Transaction.from(partialTx);
 
@@ -55,8 +59,14 @@ export const SubmitPage = () => {
       // Step 5: broadcast — server wallet not involved
       setStatus("broadcasting");
       const hash = await signer.client.sendTransaction(signedTx);
-
       setTxHash(hash);
+
+      // Step 6: poll for block confirmation and get authoritative timestamp
+      setStatus("confirming");
+      const blockInfo = await api.getBlockTime(hash);
+      setBlockTimestamp(blockInfo.timestamp);
+      setBlockNumber(blockInfo.blockNumber);
+
       setStatus("success");
     } catch (err: any) {
       console.error(err);
@@ -108,19 +118,51 @@ export const SubmitPage = () => {
       {status === "hashing" && <StatusPulse color="blue" text="Computing SHA-256 hash…" />}
       {status === "signing" && <StatusPulse color="indigo" text="Waiting for wallet signature…" />}
       {status === "broadcasting" && <StatusPulse color="indigo" text="Broadcasting to CKB…" />}
+      {status === "confirming" && (
+        <div className="mt-4 text-center text-blue-600 animate-pulse font-medium">
+          <p>⏳ Waiting for block confirmation…</p>
+          <p className="text-xs text-gray-500 mt-1">Usually takes 10-30 seconds</p>
+        </div>
+      )}
 
       {status === "success" && (
-        <div className="mt-6 p-4 bg-green-50 text-green-800 rounded-md break-all border border-green-200">
-          <p className="font-bold">✅ Anchored on-chain!</p>
-          <p className="text-xs mt-1 font-mono">TX: {txHash}</p>
+        <div className="mt-6 p-5 bg-green-50 text-green-900 rounded-lg border border-green-200">
+          <p className="font-bold text-lg mb-3">✅ Proof Anchored On-Chain</p>
+          
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between items-start">
+              <span className="text-gray-600">Confirmed at:</span>
+              <span className="font-semibold font-mono text-right">
+                {blockTimestamp ? new Date(blockTimestamp).toLocaleString() : "—"}
+              </span>
+            </div>
+            
+            <div className="flex justify-between items-start">
+              <span className="text-gray-600">Block:</span>
+              <span className="font-semibold font-mono">#{blockNumber || "—"}</span>
+            </div>
+            
+            <div className="pt-2 border-t border-green-200">
+              <p className="text-xs text-gray-600 mb-1">Transaction Hash:</p>
+              <p className="font-mono text-xs break-all">{txHash}</p>
+            </div>
+          </div>
+
           <a
             href={`https://pudge.explorer.nervos.org/transaction/${txHash}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-blue-600 underline mt-2 block font-semibold"
+            className="inline-block mt-4 text-sm text-blue-600 hover:text-blue-700 font-semibold underline"
           >
             View on CKB Explorer →
           </a>
+
+          <div className="mt-4 pt-4 border-t border-green-200">
+            <p className="text-xs text-gray-600">
+              💡 This timestamp is cryptographically proven by the CKB blockchain. 
+              It cannot be tampered with or backdated.
+            </p>
+          </div>
         </div>
       )}
 

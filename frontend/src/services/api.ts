@@ -19,6 +19,21 @@ export const api = {
     return response.data; // Partial tx: { outputs, outputsData }
   },
 
+  /**
+   * Polls the transaction until confirmed, then fetches the block timestamp.
+   * Returns the authoritative proof time from the block header.
+   */
+  getBlockTime: async (txHash: string): Promise<{
+    timestamp: string;
+    blockNumber: string;
+    blockHash: string;
+  }> => {
+    const response = await client.get("/hashes/blocktime", {
+      params: { txHash },
+    });
+    return response.data;
+  },
+
   verifyHash: async (hash: string, userAddress: string) => {
     try {
       const response = await client.get(`/hashes/${hash}`, {
