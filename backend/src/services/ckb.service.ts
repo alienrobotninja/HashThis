@@ -31,7 +31,7 @@ export class CKBService {
 
   /**
    * Builds an unsigned transaction shell locked to the user's address.
-   * Server generates the timestamp — not the caller.
+   * Cell data contains only the file hash — timestamp comes from block header.
    * The server wallet is not involved in signing or paying.
    */
   public async buildUnsignedTx(payload: UnsignedTxPayload): Promise<UnsignedTxResult> {
@@ -40,20 +40,20 @@ export class CKBService {
     const { fileHash, userAddress } = payload;
     const userScript = (await ccc.Address.fromString(userAddress, this.client)).script;
 
-    // Server owns the timestamp — not the caller
-    const serverTimestamp = new Date().toISOString();
-    const encodedData = this.encodeHashData(fileHash, serverTimestamp);
+    // Encode only the hash — no timestamp in cell data
+    const encodedData = this.encodeHashData(fileHash);
 
     logger.info(`Built unsigned tx for ${userAddress} — hash: ${fileHash}`);
 
     return {
-      outputs: [{ lock: userScript, capacity: ccc.numLeToHex(ANCHOR_CAPACITY) }],
+      outputs: [{ lock: userScript, capacity: ccc.numToHex(ANCHOR_CAPACITY) }],
       outputsData: [encodedData],
     };
   }
 
   /**
    * Legacy: server-signs-and-pays flow. Retained for admin/internal use only.
+   * Cell data contains only the hash — timestamp comes from block header.
    */
   public async submitHash(payload: HashPayload): Promise<SubmissionResult> {
     if (!this.isInitialized) await this.start();
@@ -62,12 +62,11 @@ export class CKBService {
       const addressObj = await this.signer.getRecommendedAddressObj();
       logger.info(`Building transaction for address: ${addressObj.address}`);
 
-      // Server owns the timestamp — not the caller
-      const serverTimestamp = new Date().toISOString();
-      const encodedData = this.encodeHashData(payload.fileHash, serverTimestamp);
+      // Encode only the hash — no timestamp in cell data
+      const encodedData = this.encodeHashData(payload.fileHash);
 
       const tx = ccc.Transaction.from({
-        outputs: [{ lock: addressObj.script, capacity: ccc.numLeToHex(ANCHOR_CAPACITY) }],
+        outputs: [{ lock: addressObj.script, capacity: ccc.numToHex(ANCHOR_CAPACITY) }],
         outputsData: [encodedData],
       });
 
@@ -86,7 +85,7 @@ export class CKBService {
 
   public async verifyHash(
     fileHash: string
-  ): Promise<{ timestamp: string; blockNumber: string } | null> {
+  ): Promise<{ blockNumber: string } | null> {
     if (!this.isInitialized) await this.start();
 
     try {
@@ -95,15 +94,23 @@ export class CKBService {
 
       logger.info(`Searching for hash: ${cleanSearchHash}`);
 
-      const collector = this.client.findCellsByLock(addressObj.script, "asc");
+      const cells: any[] = [];
+      try {
+        const iterator: any = this.client.findCells(
+          { script: addressObj.script, scriptType: "lock", scriptSearchMode: "exact" },
+          "asc"
+        );
+        for await (const cell of iterator) cells.push(cell);
+      } catch (e: any) {
+        logger.info(`findCells error: ${e.message}`);
+      }
 
-      for await (const cell of collector.collect()) {
+      for (const cell of cells) {
         const cellData = cell.outputData || "";
         if (!cellData.includes(cleanSearchHash)) continue;
 
         const decoded = this.decodeHashData(cellData);
         return {
-          timestamp: decoded.timestamp,
           blockNumber: cell.blockNumber?.toString() || "unknown",
         };
       }
@@ -115,21 +122,22 @@ export class CKBService {
     }
   }
 
-  private encodeHashData(fileHash: string, timestampISO: string): string {
+  // Encodes only the 32-byte file hash.
+  // Timestamp is no longer stored in cell data — it comes from block header.
+  private encodeHashData(fileHash: string): string {
     const cleanHash = fileHash.startsWith("0x") ? fileHash.slice(2) : fileHash;
-    const timestampMs = BigInt(new Date(timestampISO).getTime());
-    const timestampHex = timestampMs.toString(16).padStart(16, "0");
-    return `0x${cleanHash}${timestampHex}`;
+    return `0x${cleanHash}`;
   }
 
-  private decodeHashData(hexData: string): { hash: string; timestamp: string } {
+  // Decodes cell data to extract only the file hash.
+  // Timestamp is no longer stored — comes from block header.
+  // Backwards compatible: if legacy data has timestamp appended, we ignore it.
+  private decodeHashData(hexData: string): { hash: string } {
     const data = hexData.startsWith("0x") ? hexData.slice(2) : hexData;
+    // Extract only the first 32 bytes (64 hex chars) as the hash
     const hash = data.slice(0, 64);
-    const timestampHex = data.slice(64, 80);
-    const timestampMs = BigInt(`0x${timestampHex}`);
     return {
       hash: `0x${hash}`,
-      timestamp: new Date(Number(timestampMs)).toISOString(),
     };
   }
 }

@@ -48,7 +48,7 @@ class CKBService {
 
   /**
    * Builds an unsigned transaction shell locked to the user's address.
-   * Server generates the timestamp — not the caller.
+   * Cell data contains only the file hash — timestamp comes from block header.
    * The server wallet is not involved in signing or paying.
    */
   public async buildUnsignedTx(payload: UnsignedTxPayload): Promise<UnsignedTxResult> {
@@ -56,9 +56,8 @@ class CKBService {
 
     const userScript = (await ccc.Address.fromString(userAddress, this.client)).script;
 
-    // Server owns the timestamp — not the caller
-    const serverTimestamp = new Date().toISOString();
-    const encodedData = this.encodeHashData(fileHash, serverTimestamp);
+    // Encode only the hash — no timestamp in cell data
+    const encodedData = this.encodeHashData(fileHash);
 
     console.log(`[CKB] Built unsigned tx for ${userAddress} — hash: ${fileHash}`);
 
@@ -70,15 +69,15 @@ class CKBService {
 
   /**
    * Legacy: server-signs-and-pays flow. Retained for admin/internal use only.
+   * Cell data contains only the hash — timestamp comes from block header.
    */
   public async submitHash(payload: HashPayload): Promise<SubmissionResult> {
     try {
       const signer = this.getSigner();
       const addressObj = await signer.getRecommendedAddressObj();
 
-      // Server owns the timestamp — not the caller
-      const serverTimestamp = new Date().toISOString();
-      const encodedData = this.encodeHashData(payload.fileHash, serverTimestamp);
+      // Encode only the hash — no timestamp in cell data
+      const encodedData = this.encodeHashData(payload.fileHash);
 
       const tx = ccc.Transaction.from({
         outputs: [{ lock: addressObj.script, capacity: ccc.numToHex(ANCHOR_CAPACITY) }],
@@ -101,11 +100,12 @@ class CKBService {
   /**
    * Scans cells locked to the given user address for a matching file hash.
    * Does not require the server wallet — userAddress is passed from the client.
+   * Note: Timestamp is no longer in cell data — use getBlockTime() instead.
    */
   public async verifyHash(
     fileHash: string,
     userAddress: string
-  ): Promise<{ timestamp: string; blockNumber: string } | null> {
+  ): Promise<{ blockNumber: string; txHash?: string } | null> {
     try {
       // Resolve user address -> lock script, no server signer needed
       const userScript = (await ccc.Address.fromString(userAddress, this.client)).script;
@@ -130,8 +130,8 @@ class CKBService {
 
         const decoded = this.decodeHashData(cell.outputData);
         return {
-          timestamp: decoded.timestamp,
           blockNumber: cell.blockNumber?.toString() || "unknown",
+          txHash: cell.txHash, // Include txHash so caller can fetch block timestamp
         };
       }
 
@@ -142,23 +142,22 @@ class CKBService {
     }
   }
 
-  // Encodes [32-byte hash][8-byte timestamp ms] as a hex string.
-  // Always called with a server-generated timestamp — never user input.
-  private encodeHashData(fileHash: string, timestampISO: string): string {
+  // Encodes only the 32-byte file hash.
+  // Timestamp is no longer stored in cell data — it comes from block header.
+  private encodeHashData(fileHash: string): string {
     const cleanHash = fileHash.startsWith("0x") ? fileHash.slice(2) : fileHash;
-    const timestampMs = BigInt(new Date(timestampISO).getTime());
-    const timestampHex = timestampMs.toString(16).padStart(16, "0");
-    return `0x${cleanHash}${timestampHex}`;
+    return `0x${cleanHash}`;
   }
 
-  private decodeHashData(hexData: string): { hash: string; timestamp: string } {
+  // Decodes cell data to extract only the file hash.
+  // Timestamp is no longer stored — comes from block header.
+  // Backwards compatible: if legacy data has timestamp appended, we ignore it.
+  private decodeHashData(hexData: string): { hash: string } {
     const data = hexData.startsWith("0x") ? hexData.slice(2) : hexData;
+    // Extract only the first 32 bytes (64 hex chars) as the hash
     const hash = data.slice(0, 64);
-    const timestampHex = data.slice(64, 80);
-    const timestampMs = BigInt(`0x${timestampHex}`);
     return {
       hash: `0x${hash}`,
-      timestamp: new Date(Number(timestampMs)).toISOString(),
     };
   }
 }
