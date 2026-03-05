@@ -140,6 +140,88 @@ export class CKBService {
       hash: `0x${hash}`,
     };
   }
+
+  /**
+   * Polls transaction status until it's committed, then fetches the block timestamp.
+   * This is the authoritative proof timestamp - from the block header, not server time.
+   */
+  public async getBlockTime(txHash: string): Promise<{
+    timestamp: string;
+    blockNumber: string;
+    blockHash: string;
+  }> {
+    if (!this.isInitialized) await this.start();
+
+    const cleanTxHash = txHash.startsWith("0x") ? txHash : `0x${txHash}`;
+    
+    logger.info(`Polling transaction status: ${cleanTxHash}`);
+    
+    // Poll until transaction is committed (max 60 attempts = ~5 minutes)
+    const txStatus = await this.pollTransactionStatus(cleanTxHash, 60, 5000);
+    
+    if (!txStatus || !txStatus.blockHash) {
+      throw new Error("Transaction not confirmed - no block hash available");
+    }
+
+    logger.info(`Transaction committed in block: ${txStatus.blockHash}`);
+
+    // Fetch the block header to get the timestamp
+    const block = await this.client.getBlock(txStatus.blockHash);
+    
+    if (!block || !block.header) {
+      throw new Error("Failed to fetch block header");
+    }
+
+    // Extract timestamp from block header (it's in milliseconds as hex)
+    const timestampMs = Number(BigInt(block.header.timestamp));
+    const timestamp = new Date(timestampMs).toISOString();
+    const blockNumber = BigInt(block.header.number).toString();
+
+    logger.info(`Block timestamp: ${timestamp}, Block number: ${blockNumber}`);
+
+    return {
+      timestamp,
+      blockNumber,
+      blockHash: txStatus.blockHash,
+    };
+  }
+
+  /**
+   * Polls transaction status until committed or timeout.
+   * Returns transaction status with blockHash when committed.
+   */
+  public async pollTransactionStatus(
+    txHash: string,
+    maxAttempts: number = 60,
+    intervalMs: number = 5000
+  ): Promise<{ blockHash: string; status: string } | null> {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const txStatus = await this.client.getTransaction(txHash);
+        
+        if (txStatus && txStatus.txStatus?.status === "committed") {
+          return {
+            blockHash: txStatus.txStatus.blockHash || "",
+            status: "committed",
+          };
+        }
+
+        // Wait before next attempt (except on last attempt)
+        if (attempt < maxAttempts - 1) {
+          await new Promise(resolve => setTimeout(resolve, intervalMs));
+        }
+      } catch (error: any) {
+        logger.info(`Error polling tx status (attempt ${attempt + 1}): ${error.message}`);
+        
+        // Continue polling even on error (transaction might not be visible yet)
+        if (attempt < maxAttempts - 1) {
+          await new Promise(resolve => setTimeout(resolve, intervalMs));
+        }
+      }
+    }
+
+    return null; // Timeout
+  }
 }
 
 export const ckbService = new CKBService();
