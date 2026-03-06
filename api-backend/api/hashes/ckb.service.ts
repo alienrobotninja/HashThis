@@ -192,6 +192,56 @@ class CKBService {
     }
   }
 
+  /**
+   * Returns all proof cells locked to the given user address.
+   * Scans the live cell set and decodes each cell's hash data.
+   * Results are returned in descending order (most recent first).
+   */
+  public async getUserProofs(userAddress: string): Promise<Array<{
+    fileHash: string;
+    txHash: string;
+    blockNumber: string;
+  }>> {
+    try {
+      const userScript = (await ccc.Address.fromString(userAddress, this.client)).script;
+
+      console.log(`[CKB] Fetching all proofs for: ${userAddress}`);
+
+      const proofs: Array<{ fileHash: string; txHash: string; blockNumber: string }> = [];
+
+      try {
+        const iterator: any = this.client.findCells(
+          { script: userScript, scriptType: "lock", scriptSearchMode: "exact" },
+          "desc"
+        );
+        for await (const cell of iterator) {
+          if (!cell?.outputData) continue;
+
+          // Must be at least 64 hex chars (32 bytes) to be a valid hash cell
+          const raw = cell.outputData.startsWith("0x")
+            ? cell.outputData.slice(2)
+            : cell.outputData;
+          if (raw.length < 64) continue;
+
+          const decoded = this.decodeHashData(cell.outputData);
+          proofs.push({
+            fileHash: decoded.hash,
+            txHash: cell.txHash || "",
+            blockNumber: cell.blockNumber?.toString() ?? "unknown",
+          });
+        }
+      } catch (e: any) {
+        console.log("[CKB] findCells error in getUserProofs:", e.message);
+      }
+
+      console.log(`[CKB] Found ${proofs.length} proofs for ${userAddress}`);
+      return proofs;
+    } catch (error: any) {
+      console.error("[CKB] getUserProofs failed:", error.message);
+      throw new Error(`Failed to fetch user proofs: ${error.message}`);
+    }
+  }
+
   // Encodes only the 32-byte file hash.
   // Timestamp is no longer stored in cell data — it comes from block header.
   private encodeHashData(fileHash: string): string {
