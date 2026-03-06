@@ -20,6 +20,16 @@ export const api = {
   },
 
   /**
+   * Builds an unsigned transaction for multiple file hashes (batch submission).
+   * Creates multiple output cells in a single transaction.
+   * Significantly reduces per-file transaction fees.
+   */
+  buildBatchUnsignedTx: async (fileHashes: string[], userAddress: string) => {
+    const response = await client.post("/hashes/batch", { fileHashes, userAddress });
+    return response.data; // { transaction, proofCount, totalCapacity, estimatedFee }
+  },
+
+  /**
    * Polls the transaction until confirmed, then fetches the block timestamp.
    * Returns the authoritative proof time from the block header.
    */
