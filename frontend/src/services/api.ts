@@ -44,6 +44,23 @@ export const api = {
     return response.data;
   },
 
+  /**
+   * Fetches all proof cells anchored by the connected user.
+   * Returns proofs in descending order (most recent first).
+   */
+  getUserProofs: async (
+    userAddress: string,
+    limit?: number
+  ): Promise<{
+    proofs: Array<{ fileHash: string; txHash: string; blockNumber: string }>;
+    count: number;
+  }> => {
+    const params: Record<string, string | number> = { userAddress };
+    if (limit !== undefined) params.limit = limit;
+    const response = await client.get('/hashes/history', { params });
+    return response.data;
+  },
+
   verifyHash: async (hash: string, userAddress: string) => {
     try {
       const response = await client.get(`/hashes/${hash}`, {

@@ -3,10 +3,10 @@ import { ckbService } from "./ckb.service.js";
 
 /**
  * GET /api/hashes/blocktime?txHash=0x...
- * 
+ *
  * Fetches the authoritative block timestamp for a confirmed transaction.
  * This is the cryptographic proof of when the transaction was anchored.
- * 
+ *
  * Flow:
  * 1. Poll transaction status until committed
  * 2. Fetch block header using block hash
@@ -22,9 +22,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { txHash } = req.query;
+    // Use WHATWG URL API — avoids deprecated url.parse() used by req.query
+    const url = new URL(req.url ?? "", `https://${req.headers.host}`);
+    const txHash = url.searchParams.get("txHash");
 
-    if (!txHash || typeof txHash !== "string") {
+    if (!txHash) {
       return res.status(400).json({ error: "Missing or invalid txHash query parameter" });
     }
 
@@ -35,21 +37,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     console.log(`[API] Fetching block time for tx: ${txHash}`);
-    
+
     const result = await ckbService.getBlockTime(txHash);
 
     return res.status(200).json(result);
   } catch (error: any) {
     console.error("[API] Block time fetch error:", error.message);
-    
-    // Distinguish between timeout and other errors
+
     if (error.message.includes("not confirmed")) {
-      return res.status(408).json({ 
+      return res.status(408).json({
         error: "Transaction confirmation timeout",
-        message: "Transaction has not been confirmed yet. Please try again in a few moments."
+        message: "Transaction has not been confirmed yet. Please try again in a few moments.",
       });
     }
-    
+
     return res.status(500).json({ error: error.message || "Failed to fetch block time" });
   }
 }

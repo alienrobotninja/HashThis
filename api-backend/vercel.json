@@ -1,7 +1,10 @@
 {
   "routes": [
-    { "src": "/api/hashes/build", "dest": "/api/hashes/build.ts" },
-    { "src": "/api/hashes/([^/]+)", "dest": "/api/hashes/[hash].ts?hash=$1" },
-    { "src": "/api/hashes", "dest": "/api/hashes/index.ts" }
+    { "src": "/api/hashes/blocktime", "dest": "/api/hashes/blocktime.ts" },
+    { "src": "/api/hashes/batch",     "dest": "/api/hashes/batch.ts" },
+    { "src": "/api/hashes/history",   "dest": "/api/hashes/history.ts" },
+    { "src": "/api/hashes/build",     "dest": "/api/hashes/build.ts" },
+    { "src": "/api/hashes/([^/]+)",   "dest": "/api/hashes/[hash].ts?hash=$1" },
+    { "src": "/api/hashes",           "dest": "/api/hashes/index.ts" }
   ]
 }

@@ -27,7 +27,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { userAddress, limit } = req.query;
+    // Use WHATWG URL API — avoids deprecated url.parse() used by req.query
+    const url = new URL(req.url ?? "", `https://${req.headers.host}`);
+    const userAddress = url.searchParams.get("userAddress");
+    const limitParam = url.searchParams.get("limit");
 
     if (!userAddress || typeof userAddress !== "string") {
       return res.status(400).json({ error: "Missing or invalid userAddress query parameter" });
@@ -40,8 +43,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Parse optional limit (default 100, max 500)
     let maxResults = 100;
-    if (limit !== undefined) {
-      const parsed = parseInt(limit as string, 10);
+    if (limitParam !== null) {
+      const parsed = parseInt(limitParam, 10);
       if (isNaN(parsed) || parsed < 1) {
         return res.status(400).json({ error: "limit must be a positive integer" });
       }

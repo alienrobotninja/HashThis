@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { SubmitPage } from './pages/Submit';
 import { VerifyPage } from './pages/Verify';
+import { HistoryPage } from './pages/History';
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
           } />
           <Route path="/submit" element={<SubmitPage />} />
           <Route path="/verify" element={<VerifyPage />} />
+          <Route path="/history" element={<HistoryPage />} />
         </Routes>
       </Layout>
     </BrowserRouter>
