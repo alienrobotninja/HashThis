@@ -30,6 +30,58 @@ export class CKBService {
   }
 
   /**
+   * Builds an unsigned transaction with multiple hash outputs (batch proof).
+   * Each hash gets its own output cell with ANCHOR_CAPACITY.
+   * User's wallet will complete inputs and sign.
+   */
+  public async buildBatchUnsignedTx(
+    fileHashes: string[],
+    userAddress: string
+  ): Promise<{
+    transaction: any;
+    proofCount: number;
+    totalCapacity: string;
+    estimatedFee: string;
+  }> {
+    if (!this.isInitialized) await this.start();
+
+    try {
+      const userScript = (await ccc.Address.fromString(userAddress, this.client)).script;
+      
+      // Build outputs array - one cell per hash
+      const outputs = fileHashes.map(() => ({
+        lock: userScript,
+        capacity: ccc.numToHex(ANCHOR_CAPACITY)
+      }));
+
+      // Build outputs data array - one hash per cell
+      const outputsData = fileHashes.map(hash => this.encodeHashData(hash));
+
+      const totalCapacity = ANCHOR_CAPACITY * BigInt(fileHashes.length);
+
+      logger.info(`Built batch unsigned tx for ${userAddress} — ${fileHashes.length} hashes, total capacity: ${totalCapacity.toString()} shannons`);
+
+      return {
+        transaction: {
+          version: "0x0",
+          cellDeps: [],
+          headerDeps: [],
+          inputs: [],
+          outputs,
+          outputsData,
+          witnesses: []
+        },
+        proofCount: fileHashes.length,
+        totalCapacity: totalCapacity.toString(),
+        estimatedFee: "100000000" // ~1 CKB estimate (actual will be calculated by wallet)
+      };
+    } catch (error: any) {
+      logger.error(`Build batch unsigned tx failed: ${error.message}`);
+      throw new Error(`Failed to build batch transaction: ${error.message}`);
+    }
+  }
+
+  /**
    * Builds an unsigned transaction shell locked to the user's address.
    * Cell data contains only the file hash — timestamp comes from block header.
    * The server wallet is not involved in signing or paying.
