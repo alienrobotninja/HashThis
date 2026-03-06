@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ckbService } from '../api/hashes/ckb.service.js';
+import { ckbService } from './ckb.service.js';
 
 describe('CKBService - Batch Proof Submissions (Stage 3)', () => {
   describe('buildBatchUnsignedTx', () => {
@@ -84,7 +84,7 @@ describe('CKBService - Batch Proof Submissions (Stage 3)', () => {
       const result = await ckbService.buildBatchUnsignedTx(hashes, mockAddress);
 
       // Each output should have 95 CKB capacity (9500000000 shannons in hex)
-      const expectedCapacityHex = '0x236223e800'; // 9500000000 in hex
+      const expectedCapacityHex = '0x2363e7f00'; // 9500000000 in hex
       expect(result.transaction.outputs[0].capacity).toBe(expectedCapacityHex);
       expect(result.transaction.outputs[1].capacity).toBe(expectedCapacityHex);
     });
