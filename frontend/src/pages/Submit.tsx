@@ -3,6 +3,8 @@ import { ccc } from "@ckb-ccc/core";
 import { useCcc } from "@ckb-ccc/connector-react";
 import { hashFile } from "../utils/hash";
 import { api } from "../services/api";
+import { CertificateButton } from "../components/CertificateButton";
+import { ExportProofButton } from "../components/ExportProofButton";
 
 type SubmitStatus = "idle" | "hashing" | "signing" | "broadcasting" | "confirming" | "success" | "error";
 
@@ -17,6 +19,8 @@ export const SubmitPage = () => {
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [walletAddress, setWalletAddress] = useState("");
   const [txHash, setTxHash] = useState("");
+  const [fileHash, setFileHash] = useState("");
+  const [fileName, setFileName] = useState("");
   const [blockTimestamp, setBlockTimestamp] = useState("");
   const [blockNumber, setBlockNumber] = useState("");
   const [error, setError] = useState("");
@@ -35,6 +39,8 @@ export const SubmitPage = () => {
 
     setError("");
     setTxHash("");
+    setFileHash("");
+    setFileName("");
     setBlockTimestamp("");
     setBlockNumber("");
 
@@ -42,6 +48,8 @@ export const SubmitPage = () => {
       // Step 1: hash the file locally — file contents never leave the device
       setStatus("hashing");
       const fileHash = await hashFile(file);
+      setFileHash(fileHash);
+      setFileName(file.name);
 
       // Step 2: resolve user address so backend locks the cell to them
       const userAddress = await signer.getRecommendedAddress();
@@ -156,6 +164,29 @@ export const SubmitPage = () => {
           >
             View on CKB Explorer →
           </a>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <CertificateButton
+              data={{
+                fileHash,
+                txHash,
+                blockNumber,
+                timestamp: blockTimestamp,
+                walletAddress,
+                fileName,
+              }}
+            />
+            <ExportProofButton
+              data={{
+                fileHash,
+                txHash,
+                blockNumber,
+                timestamp: blockTimestamp,
+                walletAddress,
+                fileName,
+              }}
+            />
+          </div>
 
           <div className="mt-4 pt-4 border-t border-green-200">
             <p className="text-xs text-gray-600">

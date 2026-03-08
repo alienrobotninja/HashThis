@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useCcc } from "@ckb-ccc/connector-react";
 import { api } from "../services/api";
+import { CertificateButton } from "../components/CertificateButton";
+import { ExportProofButton } from "../components/ExportProofButton";
 
 interface Proof {
   fileHash: string;
@@ -228,8 +230,8 @@ export const HistoryPage = () => {
                 </div>
               </div>
 
-              {/* Right: timestamp */}
-              <div className="text-right shrink-0">
+              {/* Right: timestamp + certificate */}
+              <div className="text-right shrink-0 flex flex-col items-end gap-2">
                 {proof.timestamp ? (
                   <>
                     <p className="text-xs text-gray-400">Block time</p>
@@ -247,6 +249,30 @@ export const HistoryPage = () => {
                   >
                     Load time
                   </button>
+                )}
+                {proof.timestamp && (
+                  <div className="flex gap-1.5">
+                    <CertificateButton
+                      compact
+                      data={{
+                        fileHash: proof.fileHash,
+                        txHash: proof.txHash,
+                        blockNumber: proof.blockNumber,
+                        timestamp: proof.timestamp,
+                        walletAddress,
+                      }}
+                    />
+                    <ExportProofButton
+                      compact
+                      data={{
+                        fileHash: proof.fileHash,
+                        txHash: proof.txHash,
+                        blockNumber: proof.blockNumber,
+                        timestamp: proof.timestamp,
+                        walletAddress,
+                      }}
+                    />
+                  </div>
                 )}
               </div>
             </div>

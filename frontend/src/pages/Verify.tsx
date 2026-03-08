@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { useCcc } from "@ckb-ccc/connector-react";
 import { hashFile } from "../utils/hash";
 import { api } from "../services/api";
+import { CertificateButton } from "../components/CertificateButton";
+import { ExportProofButton } from "../components/ExportProofButton";
 
 type VerifyStatus = "idle" | "hashing" | "checking" | "fetching_time" | "found" | "not_found" | "error";
 
@@ -12,6 +14,8 @@ export const VerifyPage = () => {
   const [status, setStatus] = useState<VerifyStatus>("idle");
   const [walletAddress, setWalletAddress] = useState("");
   const [result, setResult] = useState<any>(null);
+  const [verifiedFileHash, setVerifiedFileHash] = useState("");
+  const [verifiedFileName, setVerifiedFileName] = useState("");
   const [blockTimestamp, setBlockTimestamp] = useState("");
   const [blockNumber, setBlockNumber] = useState("");
   const [error, setError] = useState("");
@@ -32,12 +36,16 @@ export const VerifyPage = () => {
     setStatus("hashing");
     setError("");
     setResult(null);
+    setVerifiedFileHash("");
+    setVerifiedFileName("");
     setBlockTimestamp("");
     setBlockNumber("");
 
     try {
       // Hash the file locally
       const hash = await hashFile(file);
+      setVerifiedFileHash(hash);
+      setVerifiedFileName(file.name);
       const userAddress = await signer.getRecommendedAddress();
 
       setStatus("checking");
@@ -47,18 +55,24 @@ export const VerifyPage = () => {
 
       if (data) {
         setResult(data);
-        
-        // If we have a txHash, fetch the block timestamp
+
+        // Always set blockNumber from cell scan first so it is never blank
+        setBlockNumber(data.blockNumber || "");
+
+        // Try to enrich with authoritative block-header timestamp.
+        // Own try/catch so a confirmation timeout never hides a valid proof.
         if (data.txHash) {
           setStatus("fetching_time");
-          const blockInfo = await api.getBlockTime(data.txHash);
-          setBlockTimestamp(blockInfo.timestamp);
-          setBlockNumber(blockInfo.blockNumber);
-        } else {
-          // Fallback: use blockNumber from cell if no txHash
-          setBlockNumber(data.blockNumber || "unknown");
+          try {
+            const blockInfo = await api.getBlockTime(data.txHash);
+            setBlockTimestamp(blockInfo.timestamp);
+            setBlockNumber(blockInfo.blockNumber);
+          } catch {
+            // Timestamp fetch failed (tx not yet confirmed on this node).
+            // Proof is still valid — show cell blockNumber as fallback.
+          }
         }
-        
+
         setStatus("found");
       } else {
         setStatus("not_found");
@@ -123,21 +137,54 @@ export const VerifyPage = () => {
             <div className="flex justify-between items-start">
               <span className="text-gray-600">Anchored at:</span>
               <span className="font-semibold font-mono text-right">
-                {blockTimestamp ? new Date(blockTimestamp).toLocaleString() : "—"}
+                {blockTimestamp
+                  ? new Date(blockTimestamp).toLocaleString()
+                  : <span className="text-gray-400 italic text-xs">Awaiting confirmation</span>}
               </span>
             </div>
-            
+
             <div className="flex justify-between items-start">
               <span className="text-gray-600">Block:</span>
-              <span className="font-semibold font-mono">#{blockNumber || result.blockNumber || "—"}</span>
+              <span className="font-semibold font-mono">
+                #{blockNumber || result.blockNumber || "—"}
+              </span>
             </div>
+
+            {!blockTimestamp && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                ⚠ Block timestamp unavailable — the transaction may still be confirming.
+                The on-chain proof is valid regardless.
+              </p>
+            )}
           </div>
 
           <div className="mt-4 pt-4 border-t border-blue-200">
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-gray-600 mb-3">
               ✓ File fingerprint matches on-chain record.
-              This timestamp is cryptographically proven by the blockchain.
+              {blockTimestamp && " This timestamp is cryptographically proven by the blockchain."}
             </p>
+            <div className="flex flex-wrap gap-2 items-center">
+              <CertificateButton
+                data={{
+                  fileHash: verifiedFileHash,
+                  txHash: result?.txHash || "",
+                  blockNumber: blockNumber || result?.blockNumber || "",
+                  timestamp: blockTimestamp,
+                  walletAddress,
+                  fileName: verifiedFileName,
+                }}
+              />
+              <ExportProofButton
+                data={{
+                  fileHash: verifiedFileHash,
+                  txHash: result?.txHash || "",
+                  blockNumber: blockNumber || result?.blockNumber || "",
+                  timestamp: blockTimestamp,
+                  walletAddress,
+                  fileName: verifiedFileName,
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
