@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useCcc } from "@ckb-ccc/connector-react";
 import { api } from "../services/api";
 import { CertificateButton } from "../components/CertificateButton";
