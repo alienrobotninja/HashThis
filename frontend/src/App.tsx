@@ -3,6 +3,7 @@ import { Layout } from './components/Layout';
 import { SubmitPage } from './pages/Submit';
 import { VerifyPage } from './pages/Verify';
 import { HistoryPage } from './pages/History';
+import { BulkVerifyPage } from './pages/BulkVerify';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
           <Route path="/submit" element={<SubmitPage />} />
           <Route path="/verify" element={<VerifyPage />} />
           <Route path="/history" element={<HistoryPage />} />
+          <Route path="/bulk-verify" element={<BulkVerifyPage />} />
         </Routes>
       </Layout>
     </BrowserRouter>

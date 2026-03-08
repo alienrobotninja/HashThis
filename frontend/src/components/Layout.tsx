@@ -18,6 +18,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <Link to="/submit" className={isActive('/submit')}>Anchor Hash</Link>
             <Link to="/verify" className={isActive('/verify')}>Verify</Link>
             <Link to="/history" className={isActive('/history')}>History</Link>
+            <Link to="/bulk-verify" className={isActive('/bulk-verify')}>Bulk Verify</Link>
           </nav>
         </div>
       </header>
