@@ -163,28 +163,33 @@ export const VerifyPage = () => {
               ✓ File fingerprint matches on-chain record.
               {blockTimestamp && " This timestamp is cryptographically proven by the blockchain."}
             </p>
-            <div className="flex flex-wrap gap-2 items-center">
-              <CertificateButton
-                data={{
-                  fileHash: verifiedFileHash,
-                  txHash: result?.txHash || "",
-                  blockNumber: blockNumber || result?.blockNumber || "",
-                  timestamp: blockTimestamp,
-                  walletAddress,
-                  fileName: verifiedFileName,
-                }}
-              />
-              <ExportProofButton
-                data={{
-                  fileHash: verifiedFileHash,
-                  txHash: result?.txHash || "",
-                  blockNumber: blockNumber || result?.blockNumber || "",
-                  timestamp: blockTimestamp,
-                  walletAddress,
-                  fileName: verifiedFileName,
-                }}
-              />
-            </div>
+            {(() => {
+              const proofData = {
+                fileHash: verifiedFileHash,
+                txHash: result?.txHash || "",
+                blockNumber: blockNumber || result?.blockNumber || "",
+                timestamp: blockTimestamp,
+                walletAddress,
+                fileName: verifiedFileName,
+              };
+              const canCertify = !!proofData.txHash && !!proofData.blockNumber && !!proofData.timestamp;
+              return (
+                <div className="flex flex-wrap gap-2 items-center">
+                  {canCertify
+                    ? <CertificateButton data={proofData} />
+                    : (
+                      <span
+                        title="Certificate requires a confirmed block timestamp. Try again once the transaction is confirmed."
+                        className="inline-flex items-center gap-1.5 text-sm px-5 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
+                      >
+                        📄 Certificate unavailable
+                      </span>
+                    )
+                  }
+                  <ExportProofButton data={proofData} />
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
