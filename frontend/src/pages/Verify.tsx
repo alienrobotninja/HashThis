@@ -146,11 +146,11 @@ export const VerifyPage = () => {
             <div className="flex justify-between items-start">
               <span className="text-gray-600">Block:</span>
               <span className="font-semibold font-mono">
-                #{blockNumber || result.blockNumber || "—"}
+                {blockNumber ? `#${blockNumber}` : result.blockNumber ? `#${result.blockNumber}` : "—"}
               </span>
             </div>
 
-            {!blockTimestamp && (
+            {!blockTimestamp && result?.txHash && (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
                 ⚠ Block timestamp unavailable — the transaction may still be confirming.
                 The on-chain proof is valid regardless.

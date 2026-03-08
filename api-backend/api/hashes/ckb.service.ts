@@ -180,7 +180,7 @@ class CKBService {
 
         const decoded = this.decodeHashData(cell.outputData);
         return {
-          blockNumber: cell.blockNumber?.toString() || "unknown",
+          blockNumber: cell.blockNumber?.toString() || "",
           txHash: cell.txHash, // Include txHash so caller can fetch block timestamp
         };
       }
@@ -227,7 +227,7 @@ class CKBService {
           proofs.push({
             fileHash: decoded.hash,
             txHash: cell.txHash || "",
-            blockNumber: cell.blockNumber?.toString() ?? "unknown",
+            blockNumber: cell.blockNumber?.toString() ?? "",
           });
         }
       } catch (e: any) {
