@@ -4,6 +4,7 @@ dist/
 backend/.env
 backend/node_modules/
 frontend/node_modules/
+api-backend/node_modules/
 .npm/ 
 test/
 test.zip
