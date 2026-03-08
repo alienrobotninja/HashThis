@@ -103,7 +103,10 @@ export function downloadProofJson(data: CertificateData): void {
 export async function copyProofToClipboard(data: CertificateData): Promise<boolean> {
   const json = proofToJsonString(data);
   try {
-    await navigator.clipboard.writeText(json);
+    // Guard: navigator may be undefined in non-browser environments
+    const nav = (typeof navigator !== 'undefined' ? navigator : undefined) as any;
+    if (!nav?.clipboard?.writeText) return false;
+    await nav.clipboard.writeText(json);
     return true;
   } catch {
     return false;

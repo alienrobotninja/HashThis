@@ -1,244 +1,280 @@
-// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  buildProofJson,
-  proofToJsonString,
-  buildJsonFilename,
-  downloadProofJson,
-  copyProofToClipboard,
-  type ProofJson,
-} from './proofExport';
-import type { CertificateData } from './pdfGenerator';
+  formatTimestamp,
+  validateCertificateData,
+  buildExplorerUrl,
+  buildPdfFilename,
+  generateCertificate,
+  type CertificateData,
+} from './pdfGenerator';
 
-// ── Fixtures ──────────────────────────────────────────────────────────────────
+// ── Test fixtures ─────────────────────────────────────────────────────────────
 
-const VALID: CertificateData = {
+const VALID_DATA: CertificateData = {
   fileHash:      '0x' + 'a'.repeat(64),
   txHash:        '0x' + 'b'.repeat(64),
-  blockNumber:   '9876543',
+  blockNumber:   '12345678',
   timestamp:     '2026-03-05T14:32:07.000Z',
   walletAddress: 'ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqwgx292hnvmn68xf779vmzrshpmm6epn4c0cgwga',
   fileName:      'contract.pdf',
 };
 
-const CONFIRMING: CertificateData = { ...VALID, timestamp: '' };
+// ── formatTimestamp ───────────────────────────────────────────────────────────
 
-// ── buildProofJson ────────────────────────────────────────────────────────────
-
-describe('buildProofJson', () => {
-  it('sets schema to hashthis-proof-v1', () => {
-    expect(buildProofJson(VALID).schema).toBe('hashthis-proof-v1');
+describe('formatTimestamp', () => {
+  it('returns date, time, and iso fields', () => {
+    const result = formatTimestamp('2026-03-05T14:32:07.000Z');
+    expect(result).toHaveProperty('date');
+    expect(result).toHaveProperty('time');
+    expect(result).toHaveProperty('iso');
   });
 
-  it('sets generatedAt to a valid ISO string', () => {
-    const { generatedAt } = buildProofJson(VALID);
-    expect(new Date(generatedAt).toISOString()).toBe(generatedAt);
+  it('preserves the original ISO string in .iso', () => {
+    const iso = '2026-03-05T14:32:07.000Z';
+    expect(formatTimestamp(iso).iso).toBe(iso);
   });
 
-  it('includes file.sha256 matching the input fileHash', () => {
-    expect(buildProofJson(VALID).file.sha256).toBe(VALID.fileHash);
+  it('formats date in human-readable English', () => {
+    const { date } = formatTimestamp('2026-03-05T14:32:07.000Z');
+    expect(date).toContain('2026');
+    expect(date).toMatch(/March|3/);
   });
 
-  it('includes file.name matching the input fileName', () => {
-    expect(buildProofJson(VALID).file.name).toBe(VALID.fileName);
+  it('formats time in HH:MM:SS', () => {
+    const { time } = formatTimestamp('2026-03-05T14:32:07.000Z');
+    expect(time).toMatch(/\d{2}:\d{2}:\d{2}/);
   });
 
-  it('sets file.name to null when fileName is absent', () => {
-    const { fileName: _f, ...noName } = VALID;
-    expect(buildProofJson(noName).file.name).toBeNull();
+  it('handles midnight correctly', () => {
+    const { time } = formatTimestamp('2026-01-01T00:00:00.000Z');
+    expect(time).toContain('00:00:00');
   });
 
-  it('includes blockchain.transactionHash', () => {
-    expect(buildProofJson(VALID).blockchain.transactionHash).toBe(VALID.txHash);
-  });
-
-  it('includes blockchain.blockNumber', () => {
-    expect(buildProofJson(VALID).blockchain.blockNumber).toBe(VALID.blockNumber);
-  });
-
-  it('includes blockchain.blockTimestamp when timestamp is present', () => {
-    expect(buildProofJson(VALID).blockchain.blockTimestamp).toBe(VALID.timestamp);
-  });
-
-  it('sets blockchain.blockTimestamp to null when timestamp is empty string', () => {
-    expect(buildProofJson(CONFIRMING).blockchain.blockTimestamp).toBeNull();
-  });
-
-  it('sets blockchain.ownerAddress', () => {
-    expect(buildProofJson(VALID).blockchain.ownerAddress).toBe(VALID.walletAddress);
-  });
-
-  it('builds an explorer URL containing the txHash', () => {
-    expect(buildProofJson(VALID).blockchain.explorerUrl).toContain(VALID.txHash);
-  });
-
-  it('includes at least 3 verification instructions', () => {
-    expect(buildProofJson(VALID).verification.instructions.length).toBeGreaterThanOrEqual(3);
-  });
-
-  it('includes a verifyUrl', () => {
-    expect(buildProofJson(VALID).verification.verifyUrl).toMatch(/^https?:\/\//);
-  });
-
-  it('top-level keys match the ProofJson schema', () => {
-    const keys = Object.keys(buildProofJson(VALID));
-    expect(keys).toContain('schema');
-    expect(keys).toContain('generatedAt');
-    expect(keys).toContain('file');
-    expect(keys).toContain('blockchain');
-    expect(keys).toContain('verification');
+  it('handles end-of-day timestamp correctly', () => {
+    const { time } = formatTimestamp('2026-12-31T23:59:59.000Z');
+    expect(time).toContain('23:59:59');
   });
 });
 
-// ── proofToJsonString ─────────────────────────────────────────────────────────
+// ── validateCertificateData ───────────────────────────────────────────────────
 
-describe('proofToJsonString', () => {
-  it('returns a string', () => {
-    expect(typeof proofToJsonString(VALID)).toBe('string');
+describe('validateCertificateData', () => {
+  describe('valid data', () => {
+    it('returns valid:true for a fully populated object', () => {
+      expect(validateCertificateData(VALID_DATA).valid).toBe(true);
+    });
+
+    it('returns an empty errors array for valid data', () => {
+      expect(validateCertificateData(VALID_DATA).errors).toHaveLength(0);
+    });
+
+    it('accepts hashes without 0x prefix', () => {
+      const data = { ...VALID_DATA, fileHash: 'a'.repeat(64), txHash: 'b'.repeat(64) };
+      expect(validateCertificateData(data).valid).toBe(true);
+    });
+
+    it('accepts both ckb (mainnet) and ckt (testnet) addresses', () => {
+      const mainnet = { ...VALID_DATA, walletAddress: 'ckb1mainnetaddress' };
+      const testnet = { ...VALID_DATA, walletAddress: 'ckt1testnetaddress' };
+      // Both should pass the prefix check (deep format may still fail, but prefix is correct)
+      const mainnetErrs = validateCertificateData(mainnet).errors.filter(e => e.includes('walletAddress'));
+      const testnetErrs = validateCertificateData(testnet).errors.filter(e => e.includes('walletAddress'));
+      expect(mainnetErrs).toHaveLength(0);
+      expect(testnetErrs).toHaveLength(0);
+    });
+
+    it('is valid without an optional fileName', () => {
+      const { fileName: _f, ...withoutFileName } = VALID_DATA;
+      expect(validateCertificateData(withoutFileName).valid).toBe(true);
+    });
   });
 
-  it('is valid JSON', () => {
-    expect(() => JSON.parse(proofToJsonString(VALID))).not.toThrow();
+  describe('missing required fields', () => {
+    it('reports error for missing fileHash', () => {
+      const { errors } = validateCertificateData({ ...VALID_DATA, fileHash: '' });
+      expect(errors.some(e => e.includes('fileHash'))).toBe(true);
+    });
+
+    it('reports error for missing txHash', () => {
+      const { errors } = validateCertificateData({ ...VALID_DATA, txHash: '' });
+      expect(errors.some(e => e.includes('txHash'))).toBe(true);
+    });
+
+    it('reports error for missing blockNumber', () => {
+      const { errors } = validateCertificateData({ ...VALID_DATA, blockNumber: '' });
+      expect(errors.some(e => e.includes('blockNumber'))).toBe(true);
+    });
+
+    it('reports error for missing timestamp', () => {
+      const { errors } = validateCertificateData({ ...VALID_DATA, timestamp: '' });
+      expect(errors.some(e => e.includes('timestamp'))).toBe(true);
+    });
+
+    it('reports error for missing walletAddress', () => {
+      const { errors } = validateCertificateData({ ...VALID_DATA, walletAddress: '' });
+      expect(errors.some(e => e.includes('walletAddress'))).toBe(true);
+    });
   });
 
-  it('round-trips correctly', () => {
-    const parsed: ProofJson = JSON.parse(proofToJsonString(VALID));
-    expect(parsed.schema).toBe('hashthis-proof-v1');
-    expect(parsed.file.sha256).toBe(VALID.fileHash);
-    expect(parsed.blockchain.transactionHash).toBe(VALID.txHash);
-  });
+  describe('malformed fields', () => {
+    it('rejects a fileHash shorter than 64 hex chars', () => {
+      const { errors } = validateCertificateData({ ...VALID_DATA, fileHash: '0x' + 'a'.repeat(32) });
+      expect(errors.some(e => e.includes('fileHash'))).toBe(true);
+    });
 
-  it('is pretty-printed (contains newlines)', () => {
-    expect(proofToJsonString(VALID)).toContain('\n');
+    it('rejects a fileHash longer than 64 hex chars', () => {
+      const { errors } = validateCertificateData({ ...VALID_DATA, fileHash: '0x' + 'a'.repeat(65) });
+      expect(errors.some(e => e.includes('fileHash'))).toBe(true);
+    });
+
+    it('rejects a fileHash with non-hex characters', () => {
+      const { errors } = validateCertificateData({ ...VALID_DATA, fileHash: '0x' + 'z'.repeat(64) });
+      expect(errors.some(e => e.includes('fileHash'))).toBe(true);
+    });
+
+    it('rejects an invalid ISO timestamp', () => {
+      const { errors } = validateCertificateData({ ...VALID_DATA, timestamp: 'not-a-date' });
+      expect(errors.some(e => e.includes('timestamp'))).toBe(true);
+    });
+
+    it('rejects a walletAddress that does not start with ckb or ckt', () => {
+      const { errors } = validateCertificateData({ ...VALID_DATA, walletAddress: '0xEthAddress' });
+      expect(errors.some(e => e.includes('walletAddress'))).toBe(true);
+    });
+
+    it('accumulates multiple errors', () => {
+      const bad: CertificateData = {
+        fileHash: '',
+        txHash: '',
+        blockNumber: '',
+        timestamp: '',
+        walletAddress: '',
+      };
+      const { valid, errors } = validateCertificateData(bad);
+      expect(valid).toBe(false);
+      expect(errors.length).toBeGreaterThan(1);
+    });
   });
 });
 
-// ── buildJsonFilename ─────────────────────────────────────────────────────────
+// ── buildExplorerUrl ──────────────────────────────────────────────────────────
 
-describe('buildJsonFilename', () => {
-  it('starts with hashthis-proof-', () => {
-    expect(buildJsonFilename('file.pdf')).toMatch(/^hashthis-proof-/);
+describe('buildExplorerUrl', () => {
+  it('produces a URL containing the tx hash', () => {
+    const txHash = '0x' + 'c'.repeat(64);
+    const url = buildExplorerUrl(txHash);
+    expect(url).toContain(txHash);
   });
 
-  it('ends with .json', () => {
-    expect(buildJsonFilename('file.pdf')).toMatch(/\.json$/);
+  it('points to the Nervos explorer domain', () => {
+    const url = buildExplorerUrl('0x' + 'd'.repeat(64));
+    expect(url).toContain('explorer.nervos.org');
   });
 
-  it('strips the source file extension', () => {
-    expect(buildJsonFilename('contract.docx')).not.toContain('.docx');
+  it('includes /transaction/ path segment', () => {
+    const url = buildExplorerUrl('0x' + 'e'.repeat(64));
+    expect(url).toContain('/transaction/');
+  });
+});
+
+// ── buildPdfFilename ──────────────────────────────────────────────────────────
+
+describe('buildPdfFilename', () => {
+  it('starts with hashthis-certificate-', () => {
+    expect(buildPdfFilename('myfile.pdf')).toMatch(/^hashthis-certificate-/);
+  });
+
+  it('ends with .pdf', () => {
+    expect(buildPdfFilename('myfile.pdf')).toMatch(/\.pdf$/);
+  });
+
+  it('strips the file extension from the source filename', () => {
+    const result = buildPdfFilename('contract.docx');
+    expect(result).not.toContain('.docx');
   });
 
   it('replaces special characters with underscores', () => {
-    expect(buildJsonFilename('my file (1).txt')).not.toMatch(/[ ()]/);
+    const result = buildPdfFilename('my file (draft) #1.txt');
+    expect(result).not.toMatch(/[ ()#]/);
   });
 
-  it('truncates long names to 40 chars base', () => {
-    const base = buildJsonFilename('a'.repeat(100) + '.txt')
-      .replace('hashthis-proof-', '').replace('.json', '');
+  it('truncates very long filenames to 40 chars max (base portion)', () => {
+    const longName = 'a'.repeat(100) + '.txt';
+    const result = buildPdfFilename(longName);
+    const base = result.replace('hashthis-certificate-', '').replace('.pdf', '');
     expect(base.length).toBeLessThanOrEqual(40);
   });
 
-  it('falls back to "proof" with no argument', () => {
-    expect(buildJsonFilename()).toBe('hashthis-proof-proof.json');
-  });
-
-  it('falls back to "proof" with undefined', () => {
-    expect(buildJsonFilename(undefined)).toBe('hashthis-proof-proof.json');
+  it('falls back to "proof" when no filename is provided', () => {
+    expect(buildPdfFilename()).toBe('hashthis-certificate-proof.pdf');
+    expect(buildPdfFilename(undefined)).toBe('hashthis-certificate-proof.pdf');
   });
 });
 
-// ── downloadProofJson ─────────────────────────────────────────────────────────
+// ── generateCertificate ───────────────────────────────────────────────────────
 
-describe('downloadProofJson', () => {
-  let createObjectURL: ReturnType<typeof vi.fn>;
-  let revokeObjectURL: ReturnType<typeof vi.fn>;
-  let appendChildSpy: ReturnType<typeof vi.spyOn>;
-  let removeChildSpy: ReturnType<typeof vi.spyOn>;
-  let clickSpy: ReturnType<typeof vi.fn>;
-
+describe('generateCertificate', () => {
+  // Mock jsPDF and QRCode so we don't need a browser / canvas environment
   beforeEach(() => {
-    createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
-    revokeObjectURL = vi.fn();
-    global.URL.createObjectURL = createObjectURL;
-    global.URL.revokeObjectURL = revokeObjectURL;
-
-    clickSpy = vi.fn();
-    vi.spyOn(document, 'createElement').mockReturnValue({
-      href: '',
-      download: '',
-      click: clickSpy,
-      style: {},
-    } as unknown as HTMLAnchorElement);
-
-    appendChildSpy = vi.spyOn(document.body, 'appendChild').mockImplementation(() => null as any);
-    removeChildSpy = vi.spyOn(document.body, 'removeChild').mockImplementation(() => null as any);
-  });
-
-  afterEach(() => vi.restoreAllMocks());
-
-  it('calls URL.createObjectURL with a Blob', () => {
-    downloadProofJson(VALID);
-    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
-  });
-
-  it('triggers a click on the anchor element', () => {
-    downloadProofJson(VALID);
-    expect(clickSpy).toHaveBeenCalledOnce();
-  });
-
-  it('calls URL.revokeObjectURL to clean up', () => {
-    downloadProofJson(VALID);
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
-  });
-
-  it('appends and removes the anchor from the DOM', () => {
-    downloadProofJson(VALID);
-    expect(appendChildSpy).toHaveBeenCalled();
-    expect(removeChildSpy).toHaveBeenCalled();
-  });
-});
-
-// ── copyProofToClipboard ──────────────────────────────────────────────────────
-
-describe('copyProofToClipboard', () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it('returns true when clipboard.writeText resolves', async () => {
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: vi.fn().mockResolvedValue(undefined) },
-      configurable: true,
+    vi.mock('jspdf', () => {
+      const instance = {
+        setFillColor: vi.fn(),
+        setTextColor: vi.fn(),
+        setDrawColor: vi.fn(),
+        setLineWidth: vi.fn(),
+        setFont: vi.fn(),
+        setFontSize: vi.fn(),
+        rect: vi.fn(),
+        line: vi.fn(),
+        circle: vi.fn(),
+        text: vi.fn(),
+        splitTextToSize: vi.fn((_txt: string, _w: number) => [_txt]),
+        addImage: vi.fn(),
+        save: vi.fn(),
+      };
+      return { default: vi.fn(() => instance) };
     });
-    const result = await copyProofToClipboard(VALID);
-    expect(result).toBe(true);
+
+    vi.mock('qrcode', () => ({
+      default: { toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,mock') },
+    }));
   });
 
-  it('copies the proof JSON string to clipboard', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText },
-      configurable: true,
-    });
-    await copyProofToClipboard(VALID);
-    const copied = writeText.mock.calls[0][0];
-    expect(() => JSON.parse(copied)).not.toThrow();
-    expect(JSON.parse(copied).file.sha256).toBe(VALID.fileHash);
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it('returns false when clipboard API throws', async () => {
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
-      configurable: true,
-    });
-    const result = await copyProofToClipboard(VALID);
-    expect(result).toBe(false);
+  it('throws for invalid certificate data', async () => {
+    const bad: CertificateData = { ...VALID_DATA, fileHash: '' };
+    await expect(generateCertificate(bad)).rejects.toThrow('Invalid certificate data');
   });
 
-  it('returns false when clipboard API is unavailable', async () => {
-    Object.defineProperty(navigator, 'clipboard', {
-      value: undefined,
-      configurable: true,
-    });
-    const result = await copyProofToClipboard(VALID);
-    expect(result).toBe(false);
+  it('throws and includes field name in error message', async () => {
+    const bad: CertificateData = { ...VALID_DATA, txHash: '' };
+    await expect(generateCertificate(bad)).rejects.toThrow(/txHash/);
+  });
+
+  it('resolves without error for valid data', async () => {
+    await expect(generateCertificate(VALID_DATA)).resolves.toBeUndefined();
+  });
+
+  it('calls jsPDF save with a pdf filename', async () => {
+    const jsPDF = (await import('jspdf')).default;
+    await generateCertificate(VALID_DATA);
+    const instance = (jsPDF as any).mock.results[0].value;
+    expect(instance.save).toHaveBeenCalledWith(expect.stringMatching(/\.pdf$/));
+  });
+
+  it('uses the fileName in the saved filename', async () => {
+    const jsPDF = (await import('jspdf')).default;
+    await generateCertificate({ ...VALID_DATA, fileName: 'deed.pdf' });
+    const instance = (jsPDF as any).mock.results[0].value;
+    expect(instance.save).toHaveBeenCalledWith(expect.stringContaining('deed'));
+  });
+
+  it('still resolves when QRCode generation fails', async () => {
+    const QRCode = (await import('qrcode')).default;
+    vi.spyOn(QRCode, 'toDataURL').mockRejectedValue(new Error('canvas not available'));
+    await expect(generateCertificate(VALID_DATA)).resolves.toBeUndefined();
   });
 });

@@ -147,33 +147,47 @@ describe('buildJsonFilename', () => {
 });
 
 // ── downloadProofJson ─────────────────────────────────────────────────────────
+// These tests mock browser globals via globalThis so they run in any environment.
 
 describe('downloadProofJson', () => {
   let createObjectURL: ReturnType<typeof vi.fn>;
   let revokeObjectURL: ReturnType<typeof vi.fn>;
-  let appendChildSpy: ReturnType<typeof vi.spyOn>;
-  let removeChildSpy: ReturnType<typeof vi.spyOn>;
   let clickSpy: ReturnType<typeof vi.fn>;
+  let appendChildSpy: ReturnType<typeof vi.fn>;
+  let removeChildSpy: ReturnType<typeof vi.fn>;
+  let mockAnchor: any;
 
   beforeEach(() => {
+    // Mock URL blob methods
     createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
     revokeObjectURL = vi.fn();
-    global.URL.createObjectURL = createObjectURL;
-    global.URL.revokeObjectURL = revokeObjectURL;
+    (globalThis as any).URL = {
+      createObjectURL,
+      revokeObjectURL,
+    };
 
+    // Mock anchor element returned by createElement
     clickSpy = vi.fn();
-    vi.spyOn(document, 'createElement').mockReturnValue({
-      href: '',
-      download: '',
-      click: clickSpy,
-      style: {},
-    } as unknown as HTMLAnchorElement);
+    mockAnchor = { href: '', download: '', click: clickSpy, style: {} };
 
-    appendChildSpy = vi.spyOn(document.body, 'appendChild').mockImplementation(() => null as any);
-    removeChildSpy = vi.spyOn(document.body, 'removeChild').mockImplementation(() => null as any);
+    // Mock document on globalThis
+    appendChildSpy = vi.fn();
+    removeChildSpy = vi.fn();
+    (globalThis as any).document = {
+      createElement: vi.fn().mockReturnValue(mockAnchor),
+      body: {
+        appendChild: appendChildSpy,
+        removeChild: removeChildSpy,
+      },
+    };
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    // Clean up globalThis overrides
+    delete (globalThis as any).document;
+    delete (globalThis as any).URL;
+  });
 
   it('calls URL.createObjectURL with a Blob', () => {
     downloadProofJson(VALID);
@@ -198,25 +212,25 @@ describe('downloadProofJson', () => {
 });
 
 // ── copyProofToClipboard ──────────────────────────────────────────────────────
+// Mock navigator.clipboard via globalThis — works in Node and jsdom alike.
 
 describe('copyProofToClipboard', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    delete (globalThis as any).navigator;
+  });
+
+  const mockNavigator = (clipboard: any) => {
+    (globalThis as any).navigator = { clipboard };
+  };
 
   it('returns true when clipboard.writeText resolves', async () => {
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: vi.fn().mockResolvedValue(undefined) },
-      configurable: true,
-    });
-    const result = await copyProofToClipboard(VALID);
-    expect(result).toBe(true);
+    mockNavigator({ writeText: vi.fn().mockResolvedValue(undefined) });
+    expect(await copyProofToClipboard(VALID)).toBe(true);
   });
 
   it('copies the proof JSON string to clipboard', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText },
-      configurable: true,
-    });
+    mockNavigator({ writeText });
     await copyProofToClipboard(VALID);
     const copied = writeText.mock.calls[0][0];
     expect(() => JSON.parse(copied)).not.toThrow();
@@ -224,20 +238,12 @@ describe('copyProofToClipboard', () => {
   });
 
   it('returns false when clipboard API throws', async () => {
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
-      configurable: true,
-    });
-    const result = await copyProofToClipboard(VALID);
-    expect(result).toBe(false);
+    mockNavigator({ writeText: vi.fn().mockRejectedValue(new Error('denied')) });
+    expect(await copyProofToClipboard(VALID)).toBe(false);
   });
 
   it('returns false when clipboard API is unavailable', async () => {
-    Object.defineProperty(navigator, 'clipboard', {
-      value: undefined,
-      configurable: true,
-    });
-    const result = await copyProofToClipboard(VALID);
-    expect(result).toBe(false);
+    mockNavigator(undefined);
+    expect(await copyProofToClipboard(VALID)).toBe(false);
   });
 });
