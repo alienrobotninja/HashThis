@@ -181,7 +181,7 @@ class CKBService {
         const decoded = this.decodeHashData(cell.outputData);
         return {
           blockNumber: cell.blockNumber?.toString() || "",
-          txHash: cell.txHash, // Include txHash so caller can fetch block timestamp
+          txHash: cell.outPoint?.txHash ?? cell.txHash ?? "", // outPoint.txHash is the canonical location
         };
       }
 
@@ -226,7 +226,7 @@ class CKBService {
           const decoded = this.decodeHashData(cell.outputData);
           proofs.push({
             fileHash: decoded.hash,
-            txHash: cell.txHash || "",
+            txHash: cell.outPoint?.txHash ?? cell.txHash ?? "",
             blockNumber: cell.blockNumber?.toString() ?? "",
           });
         }
