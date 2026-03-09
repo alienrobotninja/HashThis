@@ -316,12 +316,15 @@ class CKBService {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const txResponse = await this.client.getTransaction(txHash);
-        
-        if (txResponse && txResponse.status === "committed") {
-          return {
-            blockHash: txResponse.blockHash || "",
-            status: "committed",
-          };
+        if (attempt === 0) console.log(`[CKB] getTransaction raw keys:`, txResponse ? Object.keys(txResponse) : null);
+
+        // @ckb-ccc/core wraps status inside txStatus
+        const statusObj = txResponse?.txStatus ?? txResponse;
+        const status    = statusObj?.status ?? (txResponse as any)?.status;
+        const blockHash = statusObj?.blockHash ?? (txResponse as any)?.blockHash ?? "";
+
+        if (status === "committed" && blockHash) {
+          return { blockHash, status: "committed" };
         }
 
         // Wait before next attempt (except on last attempt)
