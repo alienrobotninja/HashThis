@@ -3,6 +3,7 @@ import { ccc } from "@ckb-ccc/core";
 import { useCcc } from "@ckb-ccc/connector-react";
 import { hashFile } from "../utils/hash";
 import { api } from "../services/api";
+import { classifyError, type ClassifiedError } from "../utils/errorRecovery";
 import { CertificateButton } from "../components/CertificateButton";
 import { ExportProofButton } from "../components/ExportProofButton";
 
@@ -23,7 +24,7 @@ export const SubmitPage = () => {
   const [fileName, setFileName] = useState("");
   const [blockTimestamp, setBlockTimestamp] = useState("");
   const [blockNumber, setBlockNumber] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<ClassifiedError | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isBusy = status === "hashing" || status === "signing" || status === "broadcasting" || status === "confirming";
@@ -37,7 +38,7 @@ export const SubmitPage = () => {
     const file = e.target.files?.[0];
     if (!file || !signer) return;
 
-    setError("");
+    setError(null);
     setTxHash("");
     setFileHash("");
     setFileName("");
@@ -78,7 +79,7 @@ export const SubmitPage = () => {
       setStatus("success");
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Failed to anchor file. Is your wallet connected?");
+      setError(classifyError(err));
       setStatus("error");
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -197,10 +198,22 @@ export const SubmitPage = () => {
         </div>
       )}
 
-      {status === "error" && (
-        <div className="mt-6 p-4 bg-red-50 text-red-800 rounded-md border border-red-200">
-          <p className="font-bold">❌ Error</p>
-          <p className="text-sm">{error}</p>
+      {status === "error" && error && (
+        <div className="mt-6 p-4 bg-red-50 text-red-800 rounded-lg border border-red-200">
+          <p className="font-bold mb-1">❌ {error.title}</p>
+          <p className="text-sm text-red-700 mb-2">{error.suggestion}</p>
+          <details className="text-xs text-red-400">
+            <summary className="cursor-pointer hover:text-red-600">Technical details</summary>
+            <p className="mt-1 font-mono break-all">{error.detail}</p>
+          </details>
+          {error.retryable && (
+            <button
+              onClick={() => { setStatus("idle"); setError(null); }}
+              className="mt-3 text-sm font-medium text-red-700 underline hover:text-red-900"
+            >
+              ↺ Try again
+            </button>
+          )}
         </div>
       )}
     </div>
